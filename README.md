@@ -1,36 +1,110 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 学习轨迹 Learning Trace
+
+AI-Powered PDF reading journal that records your learning process, not just the results.
+
+## What it does
+
+1. **Import PDF** → AI renders the full paper with an annotation overlay
+2. **AI Reading Companion** → Select any text to get explanations, Feynman quizzes, and misconception detection (powered by DeepSeek API)
+3. **Learning Record** → Every annotation, quiz, and Aha Moment is saved as a layer on top of the complete PDF
+4. **One Year Later** → Review your reading path, notes, and mistakes. AI re-quizzes you: "Do you still remember?"
+
+## Why this exists
+
+Most note-taking tools record conclusions. Learning Trace records **the process** — the misconceptions you had, the moments where things clicked, the path you took through a paper. One year later, you can replay how your understanding evolved.
+
+## Tech Stack
+
+- **Next.js 16** + TypeScript + Tailwind CSS
+- **Prisma** ORM (SQLite for dev, PostgreSQL for prod)
+- **PDF.js** (react-pdf) for in-browser PDF rendering
+- **DeepSeek API** (OpenAI-compatible) for AI features
+- **NextAuth** for authentication
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+# Install dependencies
+bun install
+
+# Set up environment variables
+cp .env.local.example .env.local
+# Edit .env.local and add your DEEPSEEK_API_KEY
+
+# Run database migration
+bunx prisma migrate dev
+
+# Start dev server
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Get your DeepSeek API key at [platform.deepseek.com](https://platform.deepseek.com/)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/
+├── app/
+│   ├── page.tsx              # Landing page
+│   ├── timeline/             # Learning timeline (home)
+│   ├── reader/[paperId]/     # PDF reader + AI companion
+│   ├── blog/                 # Public learning blog
+│   └── api/
+│       ├── papers/           # CRUD for papers
+│       ├── annotations/      # CRUD for annotations
+│       └── ai/
+│           ├── explain/      # AI paragraph explanation
+│           ├── quiz/         # Feynman quiz generation
+│           └── evaluate/     # Feynman answer evaluation
+├── lib/
+│   ├── prisma.ts             # Prisma client
+│   ├── ai.ts                 # DeepSeek client + system prompts
+│   ├── pdf-storage.ts        # PDF file storage
+│   └── auth.ts               # NextAuth config (TODO)
+├── components/
+│   ├── pdf/                  # PDF.js viewer components (TODO)
+│   ├── reader/               # AI panel, annotation layer (TODO)
+│   └── timeline/             # Timeline components (TODO)
+└── types/
+    └── index.ts              # Shared TypeScript types
+```
 
-## Learn More
+## Database Schema
 
-To learn more about Next.js, take a look at the following resources:
+```
+User → Paper → ReadingSession → Annotation
+                             → FeynmanQA
+                             → AILog
+                 → ReadingPath (time-series: page → dwell time → phase)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## MVP Roadmap
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [x] Project scaffold + Prisma schema
+- [x] Paper upload + storage
+- [x] AI explain / quiz / evaluate API routes
+- [x] Basic reader UI with text selection → AI interaction
+- [x] Timeline page with paper list
+- [x] Blog page scaffold
+- [ ] PDF.js integration (real PDF rendering)
+- [ ] Annotation overlay (highlight + notes on PDF coordinates)
+- [ ] Reading session tracking (dwell time, phase detection)
+- [ ] Learning record page (complete PDF + baked annotations)
+- [ ] Authentication (NextAuth)
+- [ ] Public/private toggle for blog posts
 
-## Deploy on Vercel
+## AI Features
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Feature | Trigger | DeepSeek Model | System Prompt |
+|---------|---------|----------------|---------------|
+| Paragraph explanation | User selects text → "AI Explain" | deepseek-chat | `SYSTEM_PROMPTS.explain` |
+| Feynman quiz | User selects text → "Quiz me" | deepseek-chat | `SYSTEM_PROMPTS.quiz` |
+| Answer evaluation | User submits Feynman answer | deepseek-chat | `SYSTEM_PROMPTS.evaluate` |
+| Structure analysis | Paper import | deepseek-chat | `SYSTEM_PROMPTS.structure` |
+| Final summary | Reading session end | deepseek-chat | `SYSTEM_PROMPTS.finalSummary` |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+All AI interactions are logged in `AILog` table with full prompt, response, token usage, and latency for quality tracking and future fine-tuning.
+
+## License
+
+MIT

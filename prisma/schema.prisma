@@ -1,0 +1,200 @@
+// Learning Trace — Prisma Schema
+// Data model for: PDF papers → reading sessions → annotations → AI interactions
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════
+// User
+// ═══════════════════════════════════════════════
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  papers        Paper[]
+  sessions      ReadingSession[]
+  accounts      Account[]
+  sessions_auth Session[]
+}
+
+// NextAuth required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String?
+  expires      DateTime
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ═══════════════════════════════════════════════
+// Paper — uploaded PDF
+// ═══════════════════════════════════════════════
+model Paper {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  authors     String?
+  fileName    String
+  fileSize    Int
+  fileUrl     String   // S3/OSS URL
+  pageCount   Int      @default(0)
+  // Extracted text content per page, stored as JSON: [{ page: 1, text: "..." }, ...]
+  extractedText String? // JSON string
+  // AI-generated paper structure: { sections: [{ title, page, type: "core"|"skip" }] }
+  structure   String?  // JSON string
+  // Reading status: "reading" | "completed" | "archived"
+  status      String   @default("reading")
+  // AI-generated final summary (user edits this)
+  finalSummary String?
+  // Public visibility for blog
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions    ReadingSession[]
+  annotations Annotation[]
+  aiLogs      AILog[]
+
+  @@index([userId])
+}
+
+// ═══════════════════════════════════════════════
+// ReadingSession — one reading session of a paper
+// ═══════════════════════════════════════════════
+model ReadingSession {
+  id          String   @id @default(cuid())
+  userId      String
+  paperId     String
+  // Mode: "quick" | "deep" | "free"
+  mode        String   @default("free")
+  // Reading path: [{ page, dwellTime, phase, timestamp }]
+  readingPath String?  // JSON string
+  totalTime   Int      @default(0) // seconds
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paper       Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  feynmanQAs  FeynmanQA[]
+
+  @@index([userId, paperId])
+}
+
+// ═══════════════════════════════════════════════
+// Annotation — highlight/note on PDF
+// ═══════════════════════════════════════════════
+model Annotation {
+  id          String   @id @default(cuid())
+  paperId     String
+  userId      String
+  // Annotation type
+  type        String   // "highlight" | "note" | "feynman" | "misconception" | "aha"
+  // Position on PDF
+  pageNumber  Int
+  // Coordinates for highlight: { rects: [{ x, y, width, height }] }
+  position    String   // JSON string
+  // Highlighted text content
+  textContent String?
+  // User note content
+  noteContent String?
+  // Visibility
+  isPublic    Boolean  @default(false)
+  // AI-related metadata
+  aiMeta      String?  // JSON string for AI-generated metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  paper       Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId, pageNumber])
+  @@index([userId])
+}
+
+// ═══════════════════════════════════════════════
+// FeynmanQA — Feynman technique Q&A
+// ═══════════════════════════════════════════════
+model FeynmanQA {
+  id          String   @id @default(cuid())
+  sessionId   String
+  paperId     String
+  userId      String
+  // The question AI asked
+  question    String
+  // Context (which paragraph/concept triggered it)
+  context     String?
+  // User's answer
+  userAnswer  String?
+  // AI's evaluation: { score, feedback, gaps }
+  aiEvaluation String? // JSON string
+  // Trigger: "manual" | "auto-phase-deep" | "auto-guided" | "recall"
+  trigger     String   @default("manual")
+  // Status
+  status      String   @default("pending") // "pending" | "answered" | "evaluated"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  session     ReadingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+  @@index([userId])
+}
+
+// ═══════════════════════════════════════════════
+// AILog — all AI interactions for quality tracking
+// ═══════════════════════════════════════════════
+model AILog {
+  id          String   @id @default(cuid())
+  paperId     String
+  userId      String
+  // Interaction type
+  type        String   // "explain" | "quiz" | "evaluate" | "misconception" | "structure"
+  // Input context
+  inputContext String? // JSON: { pageNumber, textContent, phase, ... }
+  // Full prompt sent to LLM
+  prompt      String
+  // Full response from LLM
+  response    String
+  // Model used
+  model       String   @default("deepseek-chat")
+  // Token usage
+  promptTokens Int     @default(0)
+  completionTokens Int @default(0)
+  // Latency in ms
+  latencyMs   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  paper       Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+  @@index([userId])
+}
