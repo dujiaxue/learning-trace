@@ -10,6 +10,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// For production (Vercel + Neon/Supabase Postgres):
+// 1. Set DATABASE_URL to your Postgres connection string
+// 2. Change provider above to "postgresql"
+// 3. Run: npx prisma migrate deploy
+
 // ═══════════════════════════════════════════════
 // User
 // ═══════════════════════════════════════════════
