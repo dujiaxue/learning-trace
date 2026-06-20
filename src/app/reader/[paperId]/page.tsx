@@ -2,9 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Sparkles, Clock, MessageSquare } from "lucide-react";
+import { ArrowLeft, Loader2, Clock, MessageSquare } from "lucide-react";
 import { PdfViewer, type Annotation, type HighlightRect } from "@/components/pdf/pdf-viewer";
 import { AIPanel, type AICardData } from "@/components/ai/ai-panel";
+import { AnnotationDetail } from "@/components/reader/annotation-detail";
+import { NoteInput } from "@/components/reader/note-input";
+import { SessionTracker } from "@/components/reader/session-tracker";
 
 export default function ReaderPage() {
   const params = useParams<{ paperId: string }>();
@@ -19,185 +22,145 @@ export default function ReaderPage() {
   const [selectedRects, setSelectedRects] = useState<HighlightRect[]>([]);
   const [aiStatus, setAiStatus] = useState("AI 阅读伴侣 · 正在跟随你的阅读");
   const [aiStatusIcon, setAiStatusIcon] = useState<"idle" | "thinking" | "alert" | "quiz">("idle");
-  const [readingTime, setReadingTime] = useState(0);
+  const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null);
+  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [sessionStats, setSessionStats] = useState({
+    totalPages: 0,
+    currentPage: 1,
+    dwellTime: {} as Record<number, number>,
+    totalTime: 0,
+    annotationCount: 0,
+    phase: "scan" as "scan" | "skim" | "deep" | "back",
+  });
 
-  // Fetch paper data
+  // Timer
+  useEffect(() => {
+    const t = setInterval(() => {
+      setSessionStats((prev) => ({ ...prev, totalTime: prev.totalTime + 1 }));
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Fetch paper
   useEffect(() => {
     async function fetchPaper() {
       try {
         const res = await fetch(`/api/papers/${params.paperId}`);
         const data = await res.json();
-        if (data.paper) {
-          setPaper(data.paper);
-          // Transform DB annotations to component format
-          const transformed: Annotation[] = (data.paper.annotations || []).map((a: any) => ({
-            id: a.id,
-            type: a.type,
-            pageNumber: a.pageNumber,
-            rects: a.position ? JSON.parse(a.position).rects || [] : [],
-            textContent: a.textContent || "",
-            noteContent: a.noteContent || "",
-            isPublic: a.isPublic || false,
-            createdAt: a.createdAt,
-          }));
-          setAnnotations(transformed);
-        }
+        setPaper(data.paper);
+        const mapped = (data.paper?.annotations || []).map((a: any) => ({
+          id: a.id,
+          type: a.type,
+          pageNumber: a.pageNumber,
+          rects: JSON.parse(a.position || '{"rects":[]}').rects || [],
+          textContent: a.textContent || "",
+          noteContent: a.noteContent || "",
+          isPublic: a.isPublic,
+          createdAt: a.createdAt,
+        }));
+        setAnnotations(mapped);
+        setSessionStats((prev) => ({
+          ...prev,
+          totalPages: data.paper?.pageCount || 0,
+          annotationCount: mapped.length,
+        }));
       } catch (err) {
-        console.error("Failed to fetch paper:", err);
+        console.error(err);
       } finally {
         setLoading(false);
       }
     }
-    fetchPaper();
+    if (params.paperId) fetchPaper();
   }, [params.paperId]);
 
-  // Reading timer
-  useEffect(() => {
-    const timer = setInterval(() => setReadingTime((t) => t + 1), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  };
-
-  // Handle text selection
+  // Handle text selection on PDF
   const handleTextSelect = useCallback((text: string, pageNumber: number, rects: HighlightRect[]) => {
     setSelectedText(text);
     setSelectedPage(pageNumber);
     setSelectedRects(rects);
-  }, []);
-
-  // Handle annotation click
-  const handleAnnotationClick = useCallback((ann: Annotation) => {
-    setAiCards((prev) => [
-      ...prev,
-      {
-        id: `info-${ann.id}-${Date.now()}`,
-        type: "info",
-        title: `标注 · 第${ann.pageNumber}页`,
-        body: ann.textContent
-          ? `原文：${ann.textContent.slice(0, 200)}...\n\n笔记：${ann.noteContent || "无"}`
-          : ann.noteContent || "无内容",
-      },
-    ]);
+    setShowNoteInput(false);
   }, []);
 
   // AI Explain
-  const handleExplain = useCallback(async (text: string, pageNumber: number) => {
+  const handleExplain = useCallback(async () => {
+    if (!selectedText || !paper) return;
+
     const cardId = `explain-${Date.now()}`;
-    setAiStatus("正在生成解释…");
+    setAiCards((prev) => [...prev, { id: cardId, type: "explain", title: "AI 解释", body: "", loading: true }]);
+    setAiStatus("thinking");
     setAiStatusIcon("thinking");
-    setAiCards((prev) => [
-      ...prev,
-      { id: cardId, type: "explain", title: "AI 解释", body: "", loading: true },
-    ]);
+    setAiStatus("正在生成解释…");
 
     try {
       const res = await fetch("/api/ai/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          paperTitle: paper?.title || "",
-          pageNumber,
-          textContent: text,
-          paperId: params.paperId,
+          paperTitle: paper.title,
+          pageNumber: selectedPage,
+          textContent: selectedText,
+          paperId: paper.id,
         }),
       });
       const data = await res.json();
 
       setAiCards((prev) =>
-        prev.map((c) =>
-          c.id === cardId
-            ? { ...c, body: data.explanation, loading: false }
-            : c
-        )
+        prev.map((c) => (c.id === cardId ? { ...c, body: data.explanation, loading: false } : c))
       );
-
-      // Save as annotation
-      await fetch("/api/annotations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paperId: params.paperId,
-          type: "highlight",
-          pageNumber,
-          position: { rects: selectedRects },
-          textContent: text,
-          note: `AI 解释: ${data.explanation?.slice(0, 100)}...`,
-          aiGenerated: true,
-        }),
-      });
+      setAiStatus("idle");
+      setAiStatusIcon("idle");
+      setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
     } catch (err) {
       setAiCards((prev) =>
-        prev.map((c) =>
-          c.id === cardId
-            ? { ...c, body: "解释生成失败，请重试", loading: false }
-            : c
-        )
+        prev.map((c) => (c.id === cardId ? { ...c, body: "解释生成失败，请稍后重试", loading: false } : c))
       );
+      setAiStatus("idle");
+      setAiStatusIcon("idle");
     }
-    setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
-    setAiStatusIcon("idle");
-    setSelectedText("");
-  }, [paper, params.paperId, selectedRects]);
+  }, [selectedText, selectedPage, paper]);
 
   // AI Quiz
-  const handleQuiz = useCallback(async (text: string, pageNumber: number) => {
+  const handleQuiz = useCallback(async () => {
+    if (!selectedText || !paper) return;
+
     const cardId = `quiz-${Date.now()}`;
-    setAiStatus("正在出题…");
+    setAiCards((prev) => [...prev, { id: cardId, type: "quiz", title: "费曼问答", body: "", loading: true, quizId: cardId }]);
+    setAiStatus("thinking");
     setAiStatusIcon("quiz");
-    setAiCards((prev) => [
-      ...prev,
-      { id: cardId, type: "quiz", title: "费曼问答", body: "", loading: true, quizId: cardId },
-    ]);
+    setAiStatus("正在出题…");
 
     try {
       const res = await fetch("/api/ai/quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          paperTitle: paper?.title || "",
-          textContent: text,
-          paperId: params.paperId,
+          paperTitle: paper.title,
+          textContent: selectedText,
+          paperId: paper.id,
         }),
       });
       const data = await res.json();
 
       setAiCards((prev) =>
-        prev.map((c) =>
-          c.id === cardId
-            ? { ...c, body: data.question, question: data.question, loading: false }
-            : c
-        )
+        prev.map((c) => (c.id === cardId ? { ...c, body: data.question, question: data.question, loading: false } : c))
       );
+      setAiStatus("quiz");
+      setAiStatus("正在等待你回答…");
     } catch (err) {
       setAiCards((prev) =>
-        prev.map((c) =>
-          c.id === cardId
-            ? { ...c, body: "出题失败，请重试", loading: false }
-            : c
-        )
+        prev.map((c) => (c.id === cardId ? { ...c, body: "出题失败，请稍后重试", loading: false } : c))
       );
+      setAiStatus("idle");
+      setAiStatusIcon("idle");
     }
-    setAiStatus("正在等待你回答…");
-    setAiStatusIcon("quiz");
-  }, [paper, params.paperId]);
+  }, [selectedText, paper]);
 
   // AI Evaluate
   const handleEvaluate = useCallback(async (quizId: string, question: string, answer: string, context?: string) => {
-    const cardId = `eval-${Date.now()}`;
+    const evalCardId = `eval-${Date.now()}`;
+    setAiCards((prev) => [...prev, { id: evalCardId, type: "evaluate", title: "AI 评估", body: "", loading: true }]);
+    setAiStatus("thinking");
     setAiStatus("正在评估你的回答…");
-    setAiStatusIcon("thinking");
-    setAiCards((prev) =>
-      prev.map((c) => (c.id === quizId ? { ...c, userAnswer: answer, body: `你的回答：${answer}` } : c))
-    );
-    setAiCards((prev) => [
-      ...prev,
-      { id: cardId, type: "evaluate", title: "AI 评估", body: "", loading: true },
-    ]);
 
     try {
       const res = await fetch("/api/ai/evaluate", {
@@ -206,49 +169,90 @@ export default function ReaderPage() {
         body: JSON.stringify({
           question,
           userAnswer: answer,
-          context,
-          paperId: params.paperId,
+          context: context || selectedText,
+          paperId: paper?.id,
           annotationId: quizId,
         }),
       });
       const data = await res.json();
 
       setAiCards((prev) =>
-        prev.map((c) => {
-          if (c.id === cardId) {
-            return { ...c, body: data.evaluation, loading: false, score: data.score };
-          }
-          if (c.id === quizId) {
-            return { ...c, score: data.score };
-          }
-          return c;
-        })
+        prev.map((c) => (c.id === evalCardId ? { ...c, body: data.evaluation, score: data.score, loading: false } : c))
       );
-
-      // If misconception, add alert card
-      if (data.score === "misconception") {
-        setAiStatusIcon("alert");
-        setAiStatus("⚠ 检测到误区，请查看评估");
-      } else {
-        setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
-        setAiStatusIcon("idle");
-      }
+      setAiStatus("idle");
+      setAiStatusIcon("idle");
+      setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
     } catch (err) {
       setAiCards((prev) =>
-        prev.map((c) =>
-          c.id === cardId
-            ? { ...c, body: "评估失败，请重试", loading: false }
-            : c
-        )
+        prev.map((c) => (c.id === evalCardId ? { ...c, body: "评估失败", loading: false } : c))
       );
+      setAiStatus("idle");
+      setAiStatusIcon("idle");
     }
-    setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
-    setAiStatusIcon("idle");
+  }, [selectedText, paper]);
+
+  // Create annotation
+  const handleAnnotationCreate = useCallback(async (data: { type: string; pageNumber: number; rects: HighlightRect[]; textContent: string; note?: string }) => {
+    try {
+      const res = await fetch("/api/annotations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paperId: params.paperId,
+          type: data.type,
+          pageNumber: data.pageNumber,
+          position: { rects: data.rects },
+          textContent: data.textContent,
+          note: data.note,
+        }),
+      });
+      const result = await res.json();
+      const newAnn: Annotation = {
+        id: result.annotation.id,
+        type: result.annotation.type,
+        pageNumber: result.annotation.pageNumber,
+        rects: JSON.parse(result.annotation.position).rects || [],
+        textContent: result.annotation.textContent || "",
+        noteContent: result.annotation.noteContent || "",
+        isPublic: result.annotation.isPublic,
+        createdAt: result.annotation.createdAt,
+      };
+      setAnnotations((prev) => [...prev, newAnn]);
+      setSessionStats((prev) => ({ ...prev, annotationCount: prev.annotationCount + 1 }));
+    } catch (err) {
+      console.error("Failed to create annotation:", err);
+    }
   }, [params.paperId]);
+
+  // Delete annotation
+  const handleAnnotationDelete = useCallback(async (id: string) => {
+    // TODO: Add DELETE /api/annotations/[id]
+    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+    setSessionStats((prev) => ({ ...prev, annotationCount: prev.annotationCount - 1 }));
+  }, []);
+
+  // Toggle public
+  const handleTogglePublic = useCallback(async (id: string, isPublic: boolean) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, isPublic } : a)));
+    // TODO: Add PATCH /api/annotations/[id]
+  }, []);
+
+  // Save note
+  const handleSaveNote = useCallback((note: string) => {
+    handleAnnotationCreate({
+      type: "note",
+      pageNumber: selectedPage,
+      rects: selectedRects,
+      textContent: selectedText,
+      note,
+    });
+    setShowNoteInput(false);
+    setSelectedText("");
+  }, [handleAnnotationCreate, selectedPage, selectedRects, selectedText]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-stone-50">
+      <div className="flex items-center justify-center min-h-screen bg-stone-50">
         <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
       </div>
     );
@@ -256,9 +260,9 @@ export default function ReaderPage() {
 
   if (!paper) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-stone-50">
-        <p className="text-stone-400 mb-4">论文未找到</p>
-        <button onClick={() => router.push("/timeline")} className="text-orange-500 hover:underline">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-stone-50">
+        <p className="text-stone-400 mb-4">论文不存在</p>
+        <button onClick={() => router.push("/timeline")} className="text-orange-600 hover:underline">
           返回时间线
         </button>
       </div>
@@ -268,38 +272,53 @@ export default function ReaderPage() {
   return (
     <div className="flex flex-col h-screen bg-stone-50">
       {/* Top bar */}
-      <header className="flex items-center justify-between px-4 py-2 bg-white border-b border-stone-200">
-        <button
-          onClick={() => router.push("/timeline")}
-          className="flex items-center gap-1 text-sm text-stone-500 hover:text-stone-900"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          返回时间线
-        </button>
-        <h1 className="text-sm font-medium text-stone-900 truncate max-w-md">{paper.title}</h1>
+      <header className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-stone-200">
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push("/timeline")} className="text-sm text-stone-500 hover:text-stone-700 flex items-center gap-1">
+            <ArrowLeft className="w-4 h-4" />
+            返回
+          </button>
+          <h1 className="font-semibold text-stone-900 text-sm">{paper.title}</h1>
+        </div>
         <div className="flex items-center gap-4 text-xs text-stone-400">
           <span className="flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {formatTime(readingTime)}
+            {formatTime(sessionStats.totalTime)}
           </span>
           <span className="flex items-center gap-1">
             <MessageSquare className="w-3 h-3" />
-            {annotations.length} 标注
+            {annotations.length}
           </span>
+          <button
+            onClick={() => router.push(`/record/${paper.id}`)}
+            className="px-3 py-1 bg-stone-100 text-stone-600 rounded-lg text-xs font-medium hover:bg-stone-200"
+          >
+            查看学习记录 →
+          </button>
         </div>
       </header>
 
-      {/* Main content: PDF + AI Panel */}
+      {/* Main: PDF + AI Panel */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1">
+        <div className="flex-1 relative">
           <PdfViewer
             fileUrl={paper.fileUrl}
             annotations={annotations}
             onTextSelect={handleTextSelect}
-            onAnnotationClick={handleAnnotationClick}
-            onAnnotationCreate={async () => {}}
+            onAnnotationClick={setSelectedAnnotation}
+            onAnnotationCreate={handleAnnotationCreate}
+          />
+
+          {/* Note input overlay */}
+          <NoteInput
+            open={showNoteInput}
+            selectedText={selectedText}
+            pageNumber={selectedPage}
+            onClose={() => setShowNoteInput(false)}
+            onSave={handleSaveNote}
           />
         </div>
+
         <div className="w-[400px] flex-shrink-0">
           <AIPanel
             cards={aiCards}
@@ -313,6 +332,23 @@ export default function ReaderPage() {
           />
         </div>
       </div>
+
+      {/* Session tracker */}
+      <SessionTracker stats={sessionStats} />
+
+      {/* Annotation detail modal */}
+      <AnnotationDetail
+        annotation={selectedAnnotation}
+        onClose={() => setSelectedAnnotation(null)}
+        onDelete={handleAnnotationDelete}
+        onTogglePublic={handleTogglePublic}
+      />
     </div>
   );
+}
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }

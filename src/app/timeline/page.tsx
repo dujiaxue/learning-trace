@@ -82,7 +82,7 @@ export default function TimelinePage() {
             {papers.map((paper) => (
               <Link
                 key={paper.id}
-                href={`/reader/${paper.id}`}
+                href={`/record/${paper.id}`}
                 className="block p-5 bg-white border border-stone-200 rounded-xl hover:border-orange-300 hover:shadow-sm transition-all group"
               >
                 <div className="flex items-start justify-between">
