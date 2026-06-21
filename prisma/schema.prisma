@@ -25,6 +25,8 @@ model User {
   sessions      ReadingSession[]
   accounts      Account[]
   sessions_auth Session[]
+  apiKeys       ApiKey[]
+  blogPosts     BlogPost[]
 }
 
 // NextAuth required models
@@ -84,6 +86,10 @@ model Paper {
   sessions    ReadingSession[]
   annotations Annotation[]
   aiLogs      AILog[]
+  blogPosts   BlogPost[]
+  // Knowledge links: this paper as source or target
+  linksFrom   KnowledgeLink[] @relation("KnowledgeLinkSource")
+  linksTo     KnowledgeLink[] @relation("KnowledgeLinkTarget")
 
   @@index([userId])
 }
@@ -196,5 +202,72 @@ model AILog {
   paper       Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
   @@index([paperId])
+  @@index([userId])
+}
+
+// ═══════════════════════════════════════════════
+// KnowledgeLink — cross-paper concept connections
+// ═══════════════════════════════════════════════
+model KnowledgeLink {
+  id            String   @id @default(cuid())
+  sourcePaperId String
+  targetPaperId String
+  // The shared concept that connects two papers
+  concept       String
+  // 0-1, how related
+  similarity    Float    @default(0.5)
+  // Source annotation context: { annotationId, textSnippet }
+  sourceContext String?
+  // Target annotation context: { annotationId, textSnippet }
+  targetContext String?
+  // AI explanation of why these are connected
+  explanation   String?
+  aiGenerated   Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  sourcePaper   Paper    @relation("KnowledgeLinkSource", fields: [sourcePaperId], references: [id], onDelete: Cascade)
+  targetPaper   Paper    @relation("KnowledgeLinkTarget", fields: [targetPaperId], references: [id], onDelete: Cascade)
+
+  @@unique([sourcePaperId, targetPaperId, concept])
+  @@index([sourcePaperId])
+  @@index([targetPaperId])
+}
+
+// ═══════════════════════════════════════════════
+// BlogPost — AI-polished blog post from annotations
+// ═══════════════════════════════════════════════
+model BlogPost {
+  id          String   @id @default(cuid())
+  paperId     String
+  userId      String
+  title       String
+  content     String   // markdown
+  // "draft" | "published"
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  paper       Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+  @@index([userId])
+}
+
+// ═══════════════════════════════════════════════
+// ApiKey — for CLI and bot access
+// ═══════════════════════════════════════════════
+model ApiKey {
+  id          String    @id @default(cuid())
+  userId      String
+  // The actual API key (hashed in production)
+  key         String    @unique
+  // Label, e.g. "CLI", "Feishu Bot"
+  name        String
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
 }

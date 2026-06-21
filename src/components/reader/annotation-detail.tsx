@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Trash2, Eye, EyeOff, Clock } from "lucide-react";
+import { X, Trash2, Eye, EyeOff, Clock, Sparkles, Loader2 } from "lucide-react";
 import type { Annotation } from "@/components/pdf/pdf-viewer";
 
 interface AnnotationDetailProps {
@@ -12,6 +12,9 @@ interface AnnotationDetailProps {
 }
 
 export function AnnotationDetail({ annotation, onClose, onDelete, onTogglePublic }: AnnotationDetailProps) {
+  const [aiReview, setAiReview] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+
   if (!annotation) return null;
 
   const typeLabels: Record<string, string> = {
@@ -29,6 +32,46 @@ export function AnnotationDetail({ annotation, onClose, onDelete, onTogglePublic
     misconception: "bg-red-50 text-red-700 border-red-200",
     aha: "bg-amber-50 text-amber-700 border-amber-200",
   };
+
+  // Parse existing AI review from aiMeta
+  const existingReview = annotation.aiMeta
+    ? (() => {
+        try {
+          const meta = JSON.parse(annotation.aiMeta);
+          return meta.review || null;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
+  const ann = annotation; // non-null alias for closures
+
+  async function fetchReview() {
+    setReviewLoading(true);
+    try {
+      const res = await fetch("/api/ai/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          annotationId: ann.id,
+          paperId: ann.paperId,
+          textContent: ann.textContent,
+          noteContent: ann.noteContent,
+        }),
+      });
+      const data = await res.json();
+      if (data.review) {
+        setAiReview(data.review);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setReviewLoading(false);
+    }
+  }
+
+  const displayReview = aiReview || existingReview;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
@@ -91,6 +134,38 @@ export function AnnotationDetail({ annotation, onClose, onDelete, onTogglePublic
               <div className="p-3 bg-red-50 rounded-lg text-sm text-stone-700 leading-relaxed">
                 {annotation.noteContent || "曾在此处产生误解，回看时需注意。"}
               </div>
+            </div>
+          )}
+
+          {/* AI Review Section */}
+          {annotation.type !== "feynman" && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs font-semibold text-stone-400 uppercase flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  AI 点评
+                </div>
+                {!displayReview && !reviewLoading && (
+                  <button
+                    onClick={fetchReview}
+                    className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-orange-600 bg-orange-50 rounded hover:bg-orange-100 transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    请求点评
+                  </button>
+                )}
+              </div>
+              {reviewLoading && (
+                <div className="p-3 bg-orange-50 rounded-lg text-sm text-orange-600 flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  AI 正在点评...
+                </div>
+              )}
+              {displayReview && !reviewLoading && (
+                <div className="p-3 bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-lg text-sm text-stone-700 leading-relaxed">
+                  {displayReview}
+                </div>
+              )}
             </div>
           )}
         </div>

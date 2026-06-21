@@ -27,6 +27,8 @@ export interface Annotation {
   textContent: string;
   noteContent?: string;
   isPublic: boolean;
+  aiMeta?: string | null;
+  paperId?: string;
   createdAt: string;
 }
 

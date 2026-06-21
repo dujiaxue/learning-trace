@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Clock, MessageSquare, AlertCircle, Sparkles, FileText, Eye, EyeOff, BookOpen, ChevronRight } from "lucide-react";
+import { ArrowLeft, Clock, MessageSquare, AlertCircle, Sparkles, FileText, Eye, EyeOff, BookOpen, ChevronRight, Link2, PenLine, Loader2, Search } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -16,8 +16,14 @@ export default function RecordPage() {
   const router = useRouter();
   const [paper, setPaper] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"notes" | "stats">("notes");
+  const [sidebarTab, setSidebarTab] = useState<"notes" | "stats" | "links" | "blog">("notes");
   const [selectedAnnotation, setSelectedAnnotation] = useState<any>(null);
+  const [knowledgeLinks, setKnowledgeLinks] = useState<any[]>([]);
+  const [linksLoading, setLinksLoading] = useState(false);
+  const [blogPost, setBlogPost] = useState<any>(null);
+  const [blogLoading, setBlogLoading] = useState(false);
+  const [blogEditing, setBlogEditing] = useState(false);
+  const [blogContent, setBlogContent] = useState("");
 
   useEffect(() => {
     async function fetchPaper() {
@@ -33,6 +39,104 @@ export default function RecordPage() {
     }
     if (params.paperId) fetchPaper();
   }, [params.paperId]);
+
+  // Fetch knowledge links when links tab is opened
+  useEffect(() => {
+    if (sidebarTab === "links" && params.paperId && knowledgeLinks.length === 0 && !linksLoading) {
+      fetchKnowledgeLinks();
+    }
+    if (sidebarTab === "blog" && params.paperId && !blogPost && !blogLoading) {
+      fetchBlogPost();
+    }
+  }, [sidebarTab, params.paperId]);
+
+  async function fetchKnowledgeLinks() {
+    setLinksLoading(true);
+    try {
+      const res = await fetch(`/api/knowledge-links?paperId=${params.paperId}`);
+      const data = await res.json();
+      setKnowledgeLinks(data.links || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLinksLoading(false);
+    }
+  }
+
+  async function generateKnowledgeLinks() {
+    setLinksLoading(true);
+    try {
+      const res = await fetch("/api/ai/knowledge-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paperId: params.paperId }),
+      });
+      const data = await res.json();
+      if (data.links) {
+        // Refetch to get structured data
+        await fetchKnowledgeLinks();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLinksLoading(false);
+    }
+  }
+
+  async function fetchBlogPost() {
+    setBlogLoading(true);
+    try {
+      const res = await fetch(`/api/blog-posts?paperId=${params.paperId}`);
+      const data = await res.json();
+      if (data.posts && data.posts.length > 0) {
+        setBlogPost(data.posts[0]);
+        setBlogContent(data.posts[0].content);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBlogLoading(false);
+    }
+  }
+
+  async function generateBlog() {
+    setBlogLoading(true);
+    try {
+      const res = await fetch("/api/ai/generate-blog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paperId: params.paperId }),
+      });
+      const data = await res.json();
+      if (data.blogPost) {
+        setBlogPost(data.blogPost);
+        setBlogContent(data.blogPost.content);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBlogLoading(false);
+    }
+  }
+
+  async function publishBlog() {
+    if (!blogPost) return;
+    try {
+      await fetch("/api/blog-posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paperId: params.paperId,
+          title: blogPost.title,
+          content: blogContent,
+          status: "published",
+        }),
+      });
+      setBlogPost({ ...blogPost, status: "published" });
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   if (loading) {
     return (
@@ -161,7 +265,15 @@ export default function RecordPage() {
                 sidebarTab === "notes" ? "border-orange-500 text-orange-600" : "border-transparent text-stone-400 hover:text-stone-600"
               }`}
             >
-              标注列表 ({annotations.length})
+              标注 ({annotations.length})
+            </button>
+            <button
+              onClick={() => setSidebarTab("links")}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                sidebarTab === "links" ? "border-orange-500 text-orange-600" : "border-transparent text-stone-400 hover:text-stone-600"
+              }`}
+            >
+              关联
             </button>
             <button
               onClick={() => setSidebarTab("stats")}
@@ -169,7 +281,15 @@ export default function RecordPage() {
                 sidebarTab === "stats" ? "border-orange-500 text-orange-600" : "border-transparent text-stone-400 hover:text-stone-600"
               }`}
             >
-              学习统计
+              统计
+            </button>
+            <button
+              onClick={() => setSidebarTab("blog")}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                sidebarTab === "blog" ? "border-orange-500 text-orange-600" : "border-transparent text-stone-400 hover:text-stone-600"
+              }`}
+            >
+              博客
             </button>
           </div>
 
@@ -233,6 +353,155 @@ export default function RecordPage() {
                     {paper.isPublic ? "已公开" : "仅自己可见"}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Knowledge Links Tab */}
+            {sidebarTab === "links" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-400 uppercase">
+                    <Link2 className="w-4 h-4" />
+                    知识关联
+                  </div>
+                  <button
+                    onClick={generateKnowledgeLinks}
+                    disabled={linksLoading}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-orange-500 rounded-md hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                  >
+                    {linksLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    {linksLoading ? "分析中..." : "AI 关联"}
+                  </button>
+                </div>
+
+                {linksLoading && knowledgeLinks.length === 0 && (
+                  <div className="text-center py-8 text-sm text-stone-400">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                    正在分析跨论文概念关联...
+                  </div>
+                )}
+
+                {!linksLoading && knowledgeLinks.length === 0 && (
+                  <div className="text-center py-8">
+                    <Link2 className="w-8 h-8 mx-auto text-stone-200 mb-3" />
+                    <p className="text-sm text-stone-400 mb-1">暂无知识关联</p>
+                    <p className="text-xs text-stone-400">点击「AI 关联」分析这篇论文与你其他论文的概念连接</p>
+                  </div>
+                )}
+
+                {knowledgeLinks.map((link) => (
+                  <div
+                    key={link.id}
+                    className="p-3 border border-stone-200 rounded-lg hover:border-orange-300 transition-colors cursor-pointer"
+                    onClick={() => router.push(`/record/${link.otherPaper.id}`)}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 text-xs font-medium rounded">
+                        {link.concept}
+                      </span>
+                      <span className="text-xs text-stone-300">
+                        {Math.round(link.similarity * 100)}% 相关
+                      </span>
+                    </div>
+                    <p className="text-xs text-stone-500 mb-2 leading-relaxed">
+                      {link.explanation}
+                    </p>
+                    <div className="flex items-center gap-1 text-xs text-orange-600 font-medium">
+                      <FileText className="w-3 h-3" />
+                      {link.otherPaper.title}
+                      <ChevronRight className="w-3 h-3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Blog Tab */}
+            {sidebarTab === "blog" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-400 uppercase">
+                    <PenLine className="w-4 h-4" />
+                    博客文章
+                  </div>
+                  {blogPost && (
+                    <button
+                      onClick={generateBlog}
+                      disabled={blogLoading}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-orange-500 rounded-md hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                    >
+                      {blogLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                      重新生成
+                    </button>
+                  )}
+                </div>
+
+                {blogLoading && !blogPost && (
+                  <div className="text-center py-8 text-sm text-stone-400">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                    正在将标注转化为博客文章...
+                  </div>
+                )}
+
+                {!blogLoading && !blogPost && (
+                  <div className="text-center py-8">
+                    <PenLine className="w-8 h-8 mx-auto text-stone-200 mb-3" />
+                    <p className="text-sm text-stone-400 mb-1">还没有博客文章</p>
+                    <p className="text-xs text-stone-400 mb-4">AI 会基于你的标注、费曼问答和总结，生成一篇结构化博客</p>
+                    <button
+                      onClick={generateBlog}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-orange-500 rounded-md hover:bg-orange-600 transition-colors mx-auto"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      生成博客文章
+                    </button>
+                  </div>
+                )}
+
+                {blogPost && (
+                  <div className="space-y-3">
+                    {blogPost.status === "published" && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 text-green-600 text-xs font-medium rounded">
+                        <Eye className="w-3 h-3" />
+                        已发布到博客
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setBlogEditing(!blogEditing)}
+                        className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                          blogEditing
+                            ? "bg-orange-100 text-orange-600"
+                            : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                        }`}
+                      >
+                        <PenLine className="w-3 h-3" />
+                        {blogEditing ? "预览" : "编辑"}
+                      </button>
+                      {blogPost.status !== "published" && (
+                        <button
+                          onClick={publishBlog}
+                          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-green-500 rounded-md hover:bg-green-600 transition-colors"
+                        >
+                          <Eye className="w-3 h-3" />
+                          发布
+                        </button>
+                      )}
+                    </div>
+
+                    {blogEditing ? (
+                      <textarea
+                        value={blogContent}
+                        onChange={(e) => setBlogContent(e.target.value)}
+                        className="w-full h-96 p-3 text-xs font-mono border border-stone-200 rounded-md resize-none focus:outline-none focus:border-orange-400"
+                      />
+                    ) : (
+                      <div className="p-3 bg-stone-50 rounded-lg text-sm text-stone-700 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
+                        {blogContent}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
