@@ -4,6 +4,7 @@ import { savePdf } from "@/lib/pdf-storage";
 
 // POST /api/papers — upload a new paper
 export async function POST(req: NextRequest) {
+  console.log("[upload] POST hit, code version: blob-v2");
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;

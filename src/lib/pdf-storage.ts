@@ -10,11 +10,13 @@ import { put, head, list } from "@vercel/blob";
  */
 export async function savePdf(file: File): Promise<{ fileUrl: string; fileName: string }> {
   const fileName = `${Date.now()}-${file.name.replace(/\s+/g, "-")}`;
+  console.log("[blob] starting put(), path:", `pdfs/${fileName}`, "size:", file.size);
   const blob = await put(`pdfs/${fileName}`, file, {
     access: "public",
     contentType: "application/pdf",
     addRandomSuffix: false,
   });
+  console.log("[blob] upload success, url:", blob.url);
   return { fileUrl: blob.url, fileName };
 }
 
