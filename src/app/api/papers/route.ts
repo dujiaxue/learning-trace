@@ -17,16 +17,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Only PDF files are supported" }, { status: 400 });
     }
 
-    // Save file to disk (dev) / S3 (prod)
-    const { fileName } = await savePdf(file);
+    // Save file to Vercel Blob Storage
+    const { fileUrl, fileName } = await savePdf(file);
 
     // Create paper record
     const paper = await prisma.paper.create({
       data: {
         title: file.name.replace(/\.pdf$/i, ""),
-        fileName: file.name,
+        fileName: fileName,
         fileSize: file.size,
-        fileUrl: `/api/files/${fileName}`,
+        fileUrl: fileUrl,
         pageCount: 0, // TODO: extract with pdfjs on server
         userId,
         status: "reading",
