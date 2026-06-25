@@ -6,13 +6,13 @@ import { put, head, list } from "@vercel/blob";
 
 /**
  * Save a PDF file to Vercel Blob Storage.
- * Returns the Blob URL (publicly readable) and a pathname for reference.
+ * Store is private, so we don't set access: "public".
+ * The returned URL includes a token for reading.
  */
 export async function savePdf(file: File): Promise<{ fileUrl: string; fileName: string }> {
   const fileName = `${Date.now()}-${file.name.replace(/\s+/g, "-")}`;
   console.log("[blob] starting put(), path:", `pdfs/${fileName}`, "size:", file.size);
   const blob = await put(`pdfs/${fileName}`, file, {
-    access: "public",
     contentType: "application/pdf",
     addRandomSuffix: false,
   });
