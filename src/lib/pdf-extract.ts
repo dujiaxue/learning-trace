@@ -5,7 +5,6 @@
  * 注意：pdfjs-dist 不在 Next.js 默认 serverExternalPackages 中，
  * 需在 next.config.ts 的 serverExternalPackages 中加入 'pdfjs-dist'。
  */
-import "pdfjs-dist/build/pdf.worker.mjs";
 import { getDocument, type PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 export interface ExtractedPage {
