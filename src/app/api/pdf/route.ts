@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { get } from "@vercel/blob";
 
 /**
  * Proxy endpoint to serve PDF files from private Vercel Blob Storage.
- * Client cannot access private blob URLs directly, so we fetch server-side
- * and stream the content back.
+ * Client cannot access private blob URLs directly, so we use the `get()`
+ * method which handles auth automatically, then stream the content back.
  *
  * GET /api/pdf?id=<paperId>  — serve PDF for a paper
  */
@@ -24,23 +25,32 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const blobRes = await fetch(paper.fileUrl);
-    if (!blobRes.ok) {
-      console.error("[pdf-proxy] blob fetch failed:", blobRes.status, blobRes.statusText);
+    const result = await get(paper.fileUrl, { access: "private" });
+    if (!result || result.statusCode !== 200 || !result.stream) {
       return NextResponse.json(
-        { error: `Failed to fetch PDF: ${blobRes.status}` },
-        { status: 502 }
+        { error: `Blob not found (status: ${result?.statusCode})` },
+        { status: 404 }
       );
     }
 
-    const contentType = blobRes.headers.get("content-type") || "application/pdf";
-    const arrayBuffer = await blobRes.arrayBuffer();
+    const contentType = result.blob.contentType || "application/pdf";
 
-    return new NextResponse(arrayBuffer, {
+    // Convert ReadableStream to ArrayBuffer for NextResponse
+    const reader = result.stream.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+    const buffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+
+    return new NextResponse(buffer, {
       headers: {
         "Content-Type": contentType,
         "Content-Disposition": `inline; filename="${paper.fileName}"`,
         "Cache-Control": "public, max-age=3600",
+        "Content-Length": String(buffer.length),
       },
     });
   } catch (err: any) {
