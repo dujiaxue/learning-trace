@@ -216,7 +216,7 @@ export default function RecordPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* PDF viewer (read-only, baked annotations) */}
         <div className="flex-1 overflow-auto bg-stone-200 p-6 flex flex-col items-center gap-4">
-          <Document file={paper.fileUrl} loading={<div className="text-stone-400">加载中...</div>}>
+          <Document file={`/api/pdf?id=${paper.id}`} loading={<div className="text-stone-400">加载中...</div>}>
             {Array.from({ length: paper.pageCount || 0 }, (_, i) => {
               const pageNum = i + 1;
               const pageAnns = annotationsByPage[pageNum] || [];

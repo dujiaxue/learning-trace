@@ -302,7 +302,7 @@ export default function ReaderPage() {
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 relative">
           <PdfViewer
-            fileUrl={paper.fileUrl}
+            fileUrl={`/api/pdf?id=${paper.id}`}
             annotations={annotations}
             onTextSelect={handleTextSelect}
             onAnnotationClick={setSelectedAnnotation}
