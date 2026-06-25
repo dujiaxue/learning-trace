@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Clock, MessageSquare } from "lucide-react";
 import { PdfViewer, type Annotation, type HighlightRect } from "@/components/pdf/pdf-viewer";
@@ -8,6 +8,10 @@ import { AIPanel, type AICardData } from "@/components/ai/ai-panel";
 import { AnnotationDetail } from "@/components/reader/annotation-detail";
 import { NoteInput } from "@/components/reader/note-input";
 import { SessionTracker } from "@/components/reader/session-tracker";
+
+// 阶段自动触发的冷却时间（毫秒），避免同一阶段反复弹卡片
+const DEEP_AUTO_QUIZ_COOLDOWN = 60_000; // 精读 60s 后自动出题
+const BACK_AUTO_MISCONCEPTION_COOLDOWN = 45_000; // 回扫 45s 后自动提示误区
 
 export default function ReaderPage() {
   const params = useParams<{ paperId: string }>();
@@ -32,6 +36,18 @@ export default function ReaderPage() {
     annotationCount: 0,
     phase: "scan" as "scan" | "skim" | "deep" | "back",
   });
+
+  // 阶段自动触发相关 ref
+  const deepPhaseStartRef = useRef<number | null>(null);
+  const backPhaseStartRef = useRef<number | null>(null);
+  const lastAutoQuizAtRef = useRef<number>(0);
+  const lastAutoMisconceptionAtRef = useRef<number>(0);
+  const autoQuizTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoMisconceptionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const paperRef = useRef<typeof paper>(null);
+  useEffect(() => {
+    paperRef.current = paper;
+  }, [paper]);
 
   // Timer
   useEffect(() => {
@@ -119,15 +135,27 @@ export default function ReaderPage() {
     }
   }, [selectedText, selectedPage, paper]);
 
-  // AI Quiz
-  const handleQuiz = useCallback(async () => {
-    if (!selectedText || !paper) return;
+  // AI Quiz —— 支持手动和阶段自动两种来源
+  const handleQuiz = useCallback(async (opts?: { autoTriggered?: boolean; contextText?: string }) => {
+    const textForQuiz = opts?.contextText ?? selectedText;
+    if (!textForQuiz || !paper) return;
 
+    const isAuto = !!opts?.autoTriggered;
     const cardId = `quiz-${Date.now()}`;
-    setAiCards((prev) => [...prev, { id: cardId, type: "quiz", title: "费曼问答", body: "", loading: true, quizId: cardId }]);
+    setAiCards((prev) => [
+      ...prev,
+      {
+        id: cardId,
+        type: "quiz",
+        title: isAuto ? "精读检测 · 自动出题" : "费曼问答",
+        body: "",
+        loading: true,
+        quizId: cardId,
+      },
+    ]);
     setAiStatus("thinking");
     setAiStatusIcon("quiz");
-    setAiStatus("正在出题…");
+    setAiStatus(isAuto ? "精读中检测到重点，自动出题…" : "正在出题…");
 
     try {
       const res = await fetch("/api/ai/quiz", {
@@ -135,17 +163,30 @@ export default function ReaderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paperTitle: paper.title,
-          textContent: selectedText,
+          textContent: textForQuiz,
           paperId: paper.id,
+          trigger: isAuto ? "auto-phase-deep" : "manual",
         }),
       });
       const data = await res.json();
 
       setAiCards((prev) =>
-        prev.map((c) => (c.id === cardId ? { ...c, body: data.question, question: data.question, loading: false } : c))
+        prev.map((c) =>
+          c.id === cardId
+            ? {
+                ...c,
+                body: data.question,
+                question: data.question,
+                loading: false,
+                // 后端创建的 FeynmanQA 记录 id，evaluate 时回传
+                quizId: data.feynmanQAId || cardId,
+              }
+            : c
+        )
       );
       setAiStatus("quiz");
       setAiStatus("正在等待你回答…");
+      if (isAuto) lastAutoQuizAtRef.current = Date.now();
     } catch (err) {
       setAiCards((prev) =>
         prev.map((c) => (c.id === cardId ? { ...c, body: "出题失败，请稍后重试", loading: false } : c))
@@ -190,6 +231,191 @@ export default function ReaderPage() {
       setAiStatusIcon("idle");
     }
   }, [selectedText, paper]);
+
+  // AI 误区检测 —— 回扫阶段自动触发，也可手动调用
+  const handleMisconception = useCallback(async (opts?: { autoTriggered?: boolean; contextText?: string; pageNumber?: number }) => {
+    const p = paperRef.current;
+    const text = opts?.contextText ?? selectedText;
+    if (!text || !p) return;
+
+    const isAuto = !!opts?.autoTriggered;
+    const cardId = `misc-${Date.now()}`;
+    setAiCards((prev) => [
+      ...prev,
+      { id: cardId, type: "alert", title: isAuto ? "回扫提示 · 误区检测" : "误区检测", body: "", loading: true },
+    ]);
+    setAiStatusIcon("alert");
+    setAiStatus(isAuto ? "检测到回扫，正在检查误区…" : "正在检测误区…");
+
+    try {
+      const res = await fetch("/api/ai/misconception", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paperTitle: p.title,
+          textContent: text,
+          pageNumber: opts?.pageNumber ?? selectedPage,
+          paperId: p.id,
+        }),
+      });
+      const data = await res.json();
+      // 若 AI 判定无误区，则给一条轻提示后撤卡片
+      const body = data.hasMisconception
+        ? data.misconception
+        : "✓ 这段没有常见误区，继续放心阅读";
+      setAiCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, body, loading: false } : c)));
+      setAiStatusIcon("idle");
+      setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
+      if (isAuto) lastAutoMisconceptionAtRef.current = Date.now();
+    } catch (err) {
+      setAiCards((prev) =>
+        prev.map((c) => (c.id === cardId ? { ...c, body: "误区检测失败", loading: false } : c))
+      );
+      setAiStatusIcon("idle");
+      setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
+    }
+  }, [selectedText, selectedPage]);
+
+  // 会话结束总结 —— 离开页面时触发（仅当有标注或阅读时长 > 60s）
+  useEffect(() => {
+    const paperId = paperRef.current?.id;
+    return () => {
+      if (!paperId) return;
+      const stats = sessionStats;
+      const worth = stats.annotationCount > 0 || stats.totalTime > 60;
+      if (!worth) return;
+      // 用 sendBeacon 不可靠（要等 AI 返回写库），改用 fetch + keepalive
+      try {
+        fetch("/api/ai/final-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paperId }),
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        // ignore
+      }
+    };
+    // 仅在 unmount 时执行
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paper?.id]);
+
+  // 阶段驱动 AI 自动触发：deep 持续 → 自动出题；back 持续 → 自动提示误区
+  useEffect(() => {
+    const phase = sessionStats.phase;
+    const now = Date.now();
+
+    // 清理对方的定时器
+    if (phase !== "deep") {
+      if (autoQuizTimerRef.current) {
+        clearTimeout(autoQuizTimerRef.current);
+        autoQuizTimerRef.current = null;
+      }
+      deepPhaseStartRef.current = null;
+    }
+    if (phase !== "back") {
+      if (autoMisconceptionTimerRef.current) {
+        clearTimeout(autoMisconceptionTimerRef.current);
+        autoMisconceptionTimerRef.current = null;
+      }
+      backPhaseStartRef.current = null;
+    }
+
+    if (phase === "deep" && deepPhaseStartRef.current === null) {
+      deepPhaseStartRef.current = now;
+      // 冷却内不再弹
+      if (now - lastAutoQuizAtRef.current > DEEP_AUTO_QUIZ_COOLDOWN) {
+        // 用当前选中文字或最近标注文本作为出题上下文
+        const ctx = selectedText || annotations[annotations.length - 1]?.textContent || "";
+        if (ctx) {
+          autoQuizTimerRef.current = setTimeout(() => {
+            handleQuiz({ autoTriggered: true, contextText: ctx });
+          }, 8000); // 进入精读 8s 后再出题，避免误判
+        }
+      }
+    }
+
+    if (phase === "back" && backPhaseStartRef.current === null) {
+      backPhaseStartRef.current = now;
+      if (now - lastAutoMisconceptionAtRef.current > BACK_AUTO_MISCONCEPTION_COOLDOWN) {
+        const ctx = selectedText || annotations[annotations.length - 1]?.textContent || "";
+        if (ctx) {
+          autoMisconceptionTimerRef.current = setTimeout(() => {
+            handleMisconception({
+              autoTriggered: true,
+              contextText: ctx,
+              pageNumber: sessionStats.currentPage,
+            });
+          }, 5000);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStats.phase]);
+
+  // 滚动相位检测：监听 PDF 滚动容器，更新 sessionStats.phase
+  // （SessionTracker 组件内部也有检测但不回传，这里在 reader 层独立维护一份）
+  useEffect(() => {
+    let lastScrollTop = 0;
+    let lastScrollTime = Date.now();
+
+    function findScrollContainer(): HTMLElement | null {
+      // PdfViewer 内部 overflow-auto 容器
+      const candidates = document.querySelectorAll(".flex-1.overflow-auto");
+      for (let i = 0; i < candidates.length; i++) {
+        const el = candidates[i] as HTMLElement;
+        if (el.scrollHeight > el.clientHeight + 50) return el;
+      }
+      return null;
+    }
+
+    function onScroll() {
+      const container = findScrollContainer();
+      if (!container) return;
+      const now = Date.now();
+      const dt = (now - lastScrollTime) / 1000;
+      const scrollTop = container.scrollTop;
+      const scrollDelta = Math.abs(scrollTop - lastScrollTop);
+      const speed = scrollDelta / Math.max(dt, 0.1);
+
+      setSessionStats((prev) => {
+        let phase = prev.phase;
+        if (scrollTop < lastScrollTop - 80) {
+          phase = "back";
+        } else if (speed > 800) {
+          phase = "scan";
+        } else if (speed > 200) {
+          phase = "skim";
+        } else if (speed > 10) {
+          phase = "deep";
+        }
+        // 更新当前页（按滚动位置估算）
+        const totalPages = prev.totalPages || 1;
+        const ratio = scrollTop / Math.max(container.scrollHeight - container.clientHeight, 1);
+        const currentPage = Math.min(totalPages, Math.max(1, Math.ceil(ratio * totalPages)));
+        return phase === prev.phase && currentPage === prev.currentPage
+          ? prev
+          : { ...prev, phase, currentPage };
+      });
+
+      lastScrollTop = scrollTop;
+      lastScrollTime = now;
+    }
+
+    // 延迟绑定，等 PdfViewer 渲染完
+    const bindTimer = setTimeout(() => {
+      const container = findScrollContainer();
+      if (container) {
+        container.addEventListener("scroll", onScroll, { passive: true });
+      }
+    }, 1500);
+
+    return () => {
+      clearTimeout(bindTimer);
+      const container = findScrollContainer();
+      if (container) container.removeEventListener("scroll", onScroll);
+    };
+  }, [paper?.id]);
 
   // Create annotation
   const handleAnnotationCreate = useCallback(async (data: { type: string; pageNumber: number; rects: HighlightRect[]; textContent: string; note?: string }) => {
@@ -323,7 +549,7 @@ export default function ReaderPage() {
           <AIPanel
             cards={aiCards}
             onExplain={handleExplain}
-            onQuiz={handleQuiz}
+            onQuiz={(text, _pageNumber) => handleQuiz({ contextText: text })}
             onEvaluate={handleEvaluate}
             selectedText={selectedText}
             selectedPage={selectedPage}

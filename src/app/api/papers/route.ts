@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { savePdf } from "@/lib/pdf-storage";
+import { analyzePaper } from "@/lib/analyze-paper";
 
 // POST /api/papers — upload a new paper
+// 上传成功后立即返回，分析在响应发送后用 after() 异步执行（导入即分析）
 export async function POST(req: NextRequest) {
-  console.log("[upload] POST hit, code version: blob-v2");
+  console.log("[upload] POST hit, code version: blob-v2-analyze");
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -80,6 +82,14 @@ export async function POST(req: NextRequest) {
       // Paper is created, session is not critical
     }
 
+    // 导入即分析：响应返回后再异步跑 PDF 提取 + 结构分析
+    // 失败只记日志，不影响已上传的 paper
+    after(() =>
+      analyzePaper(paper.id, userId).catch((e) =>
+        console.error("[after] analyzePaper failed:", e)
+      )
+    );
+
     return NextResponse.json({ paper }, { status: 201 });
   } catch (error) {
     console.error("Upload outer error:", error);
@@ -94,15 +104,21 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId") || "demo-user";
 
-  const papers = await prisma.paper.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    include: {
-      _count: {
-        select: { annotations: true },
+  try {
+    const papers = await prisma.paper.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: {
+          select: { annotations: true },
+        },
       },
-    },
-  });
+    });
 
-  return NextResponse.json({ papers });
+    return NextResponse.json({ papers });
+  } catch (error) {
+    console.error("[papers GET] error:", error);
+    // 返回空列表而非 500，避免前端整页白屏
+    return NextResponse.json({ papers: [], error: "db_unavailable" }, { status: 200 });
+  }
 }

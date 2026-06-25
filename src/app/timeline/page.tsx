@@ -20,20 +20,19 @@ export default function TimelinePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    async function fetchPapers() {
+      try {
+        const res = await fetch("/api/papers");
+        const data = await res.json();
+        setPapers(data.papers || []);
+      } catch (err) {
+        console.error("Failed to fetch papers:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
     fetchPapers();
   }, []);
-
-  async function fetchPapers() {
-    try {
-      const res = await fetch("/api/papers");
-      const data = await res.json();
-      setPapers(data.papers || []);
-    } catch (err) {
-      console.error("Failed to fetch papers:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   function handleUploaded(paper: Paper) {
     setPapers((prev) => [paper, ...prev]);

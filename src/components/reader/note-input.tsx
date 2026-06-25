@@ -13,10 +13,15 @@ interface NoteInputProps {
 
 export function NoteInput({ open, selectedText, pageNumber, onClose, onSave }: NoteInputProps) {
   const [note, setNote] = useState("");
+  const [prevOpen, setPrevOpen] = useState(open);
 
-  useEffect(() => {
-    if (open) setNote("");
-  }, [open]);
+  // open 从 false→true 时清空笔记（替代 effect 中的 setState）
+  if (open && open !== prevOpen) {
+    setPrevOpen(open);
+    setNote("");
+  } else if (!open && open !== prevOpen) {
+    setPrevOpen(open);
+  }
 
   if (!open) return null;
 

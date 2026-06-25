@@ -105,8 +105,14 @@ export function useSessionTracker(totalPages: number) {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTop = useRef(0);
-  const lastScrollTime = useRef(Date.now());
-  const pageDwellStart = useRef<number>(Date.now());
+  const lastScrollTime = useRef(0);
+  const pageDwellStart = useRef(0);
+
+  // 在 effect 中初始化时间戳，避免 render 阶段调用 impure 的 Date.now()
+  useEffect(() => {
+    lastScrollTime.current = Date.now();
+    pageDwellStart.current = Date.now();
+  }, []);
 
   // Timer for total reading time
   useEffect(() => {
