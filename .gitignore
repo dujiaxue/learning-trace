@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 项目创建过程截图（本地参考材料，不入库）
+screencapture-*.pdf
