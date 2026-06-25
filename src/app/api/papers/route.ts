@@ -33,6 +33,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Ensure user exists (upsert demo-user if needed)
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: {},
+      create: {
+        id: userId,
+        email: userId === "demo-user" ? "demo@learning-trace.app" : `${userId}@learning-trace.app`,
+        name: userId === "demo-user" ? "Demo User" : userId,
+      },
+    });
+
     // Create paper record
     let paper;
     try {
