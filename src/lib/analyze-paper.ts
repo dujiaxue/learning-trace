@@ -13,7 +13,12 @@
 import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { deepseek, DEEPSEEK_MODEL, SYSTEM_PROMPTS } from "@/lib/ai";
-import { extractPdf, type PdfExtractResult } from "@/lib/pdf-extract";
+
+// 注意：pdf-extract.ts 不在顶层 import，而是在 analyzePaper() 内部动态 import。
+// 原因：pdfjs-dist v6 是纯 ESM 包，在 Vercel serverless 运行时直接静态 import
+// 会导致整个路由模块加载失败（连 GET /api/papers 都会 500）。
+// 动态 import 确保只有在真正跑分析时才加载 pdfjs-dist，隔离风险。
+import type { PdfExtractResult } from "@/lib/pdf-extract";
 
 interface AnalyzeResult {
   ok: boolean;
@@ -99,6 +104,8 @@ export async function analyzePaper(paperId: string, userId: string): Promise<Ana
   let extracted: PdfExtractResult;
   try {
     const bytes = await fetchPdfBytes(paper.fileUrl);
+    // 动态 import，避免 pdfjs-dist 在模块加载阶段崩掉整个路由
+    const { extractPdf } = await import("@/lib/pdf-extract");
     extracted = await extractPdf(bytes);
   } catch (err) {
     console.error("[analyze-paper] 提取失败:", err);
