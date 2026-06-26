@@ -5,6 +5,39 @@
  * 注意：pdfjs-dist 不在 Next.js 默认 serverExternalPackages 中，
  * 需在 next.config.ts 的 serverExternalPackages 中加入 'pdfjs-dist'。
  */
+
+// ── Node 环境 polyfill ──────────────────────────────────────────
+// pdfjs-dist v6 内部会引用 DOMMatrix / DOMRect 等 Web API，
+// Node.js 没有这些全局变量，必须在 import pdfjs 之前注入。
+if (typeof globalThis.DOMMatrix === "undefined") {
+  // 最小化 polyfill：pdfjs 只用它做坐标变换，不会真正渲染
+  class DOMMatrixPolyfill {
+    m11 = 1; m22 = 1; m33 = 1; m44 = 1;
+    m12 = 0; m13 = 0; m14 = 0; m21 = 0; m23 = 0; m24 = 0;
+    m31 = 0; m32 = 0; m34 = 0; m41 = 0; m42 = 0; m43 = 0;
+    constructor() {}
+    static fromMatrix() { return new DOMMatrixPolyfill(); }
+    multiply() { return this; }
+    translate() { return this; }
+    scale() { return this; }
+    rotate() { return this; }
+    inverse() { return this; }
+  }
+  (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+}
+if (typeof globalThis.DOMRect === "undefined") {
+  class DOMRectPolyfill {
+    x = 0; y = 0; width = 0; height = 0;
+    get top() { return this.y; }
+    get bottom() { return this.y + this.height; }
+    get left() { return this.x; }
+    get right() { return this.x + this.width; }
+    constructor() {}
+  }
+  (globalThis as any).DOMRect = DOMRectPolyfill;
+}
+// ── polyfill 结束 ───────────────────────────────────────────────
+
 import { getDocument, type PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 export interface ExtractedPage {
