@@ -8,6 +8,7 @@
  * 退出码：全部通过 = 0，任一失败 = 1
  */
 import { setDefaultResultOrder } from "node:dns";
+import { ProxyAgent, setGlobalDispatcher } from "undici";
 
 // Node fetch 默认 IPv6 优先，部分本地网络 IPv6 不通会 10s 超时。
 // 强制 IPv4 优先，避免误报。
@@ -18,13 +19,8 @@ setDefaultResultOrder("ipv4first");
 // CI 环境（GitHub Actions）在境外无需代理，留空即可。
 const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;
 if (proxyUrl) {
-  try {
-    const { ProxyAgent, setGlobalDispatcher } = require("undici");
-    setGlobalDispatcher(new ProxyAgent(proxyUrl));
-    console.log(`Using proxy: ${proxyUrl}\n`);
-  } catch {
-    console.warn(`HTTPS_PROXY set to ${proxyUrl} but undici not available, ignoring.\n`);
-  }
+  setGlobalDispatcher(new ProxyAgent(proxyUrl));
+  console.log(`Using proxy: ${proxyUrl}\n`);
 }
 
 const baseUrl = process.argv[2] || "http://localhost:3000";
