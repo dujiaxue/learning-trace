@@ -5,7 +5,7 @@
  * unpdf 专为 Cloudflare Workers / Vercel Edge / Node serverless 设计，
  * 不依赖 DOM API、不加载 worker，开箱即用。
  */
-import { extractText, getMetaInfo } from "unpdf";
+import { extractText, getMeta } from "unpdf";
 
 export interface ExtractedPage {
   page: number;
@@ -28,35 +28,20 @@ export interface PdfExtractResult {
 export async function extractPdf(data: Uint8Array | ArrayBuffer): Promise<PdfExtractResult> {
   const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-  // unpdf 的 extractText 返回 { totalPages, text }（text 是各页用 \n\n 分隔的全文）
+  // extractText with mergePages: false → { totalPages, text: string[] }
   const { totalPages, text } = await extractText(buffer, { mergePages: false });
 
-  // unpdf 的 mergePages: false 模式下返回 per-page text 数组
-  // 但 API 可能因版本不同有差异，做个兼容处理
-  const pages: ExtractedPage[] = [];
-  if (Array.isArray(text)) {
-    for (let i = 0; i < text.length; i++) {
-      const pageText = (text[i] || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 8000);
-      pages.push({ page: i + 1, text: pageText });
-    }
-  } else {
-    // text 是单个字符串，按 totalPages 拆分（fallback）
-    const fullStr = typeof text === "string" ? text : String(text || "");
-    // 如果无法分页，就把全文放在第 1 页
-    pages.push({
-      page: 1,
-      text: fullStr.replace(/\s+/g, " ").trim().slice(0, 8000),
-    });
-  }
+  const pageTexts: string[] = Array.isArray(text) ? text : [String(text || "")];
+  const pages: ExtractedPage[] = pageTexts.map((t, i) => ({
+    page: i + 1,
+    text: (t || "").replace(/\s+/g, " ").trim().slice(0, 8000),
+  }));
 
   // 元数据
   let title: string | null = null;
   let authors: string | null = null;
   try {
-    const meta = await getMetaInfo(buffer);
+    const meta = await getMeta(buffer);
     if (meta?.info?.Title && String(meta.info.Title).trim()) {
       title = String(meta.info.Title).trim();
     }
