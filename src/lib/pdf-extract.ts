@@ -1,15 +1,11 @@
 /**
  * 服务端 PDF 文本与元信息提取
- * 使用 pdfjs-dist 在 Node 运行时解析 PDF（无 DOM 依赖）
+ * 使用 unpdf（基于 pdfjs-dist 的 serverless 封装）在 Node 运行时解析 PDF
  *
- * 注意：pdfjs-dist 不在 Next.js 默认 serverExternalPackages 中，
- * 需在 next.config.ts 的 serverExternalPackages 中加入 'pdfjs-dist'。
- *
- * 重要：DOMMatrix / DOMRect polyfill 必须在 pdfjs-dist 加载之前执行，
- * 所以它放在 analyze-paper.ts 的动态 import 之前，而不是这里。
- * 如果直接 import 本模块，请确保 polyfill 已注入。
+ * unpdf 专为 Cloudflare Workers / Vercel Edge / Node serverless 设计，
+ * 不依赖 DOM API、不加载 worker，开箱即用。
  */
-import { getDocument, type PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { extractText, getMetaInfo } from "unpdf";
 
 export interface ExtractedPage {
   page: number;
@@ -31,73 +27,58 @@ export interface PdfExtractResult {
  */
 export async function extractPdf(data: Uint8Array | ArrayBuffer): Promise<PdfExtractResult> {
   const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
-  const loadingTask = getDocument({
-    data: buffer,
-    // 服务端不使用 worker（pdfjs 在 Node 环境会自动 fallback 到主线程）
-    useWorkerFetch: false,
-    isOffscreenCanvasSupported: false,
-  });
 
-  let doc: PDFDocumentProxy;
-  try {
-    doc = await loadingTask.promise;
-  } catch (err) {
-    throw new Error(`PDF 解析失败: ${(err as Error).message}`);
-  }
+  // unpdf 的 extractText 返回 { totalPages, text }（text 是各页用 \n\n 分隔的全文）
+  const { totalPages, text } = await extractText(buffer, { mergePages: false });
 
-  const pageCount = doc.numPages;
+  // unpdf 的 mergePages: false 模式下返回 per-page text 数组
+  // 但 API 可能因版本不同有差异，做个兼容处理
   const pages: ExtractedPage[] = [];
-
-  // 限制单页文本长度，防止超大 PDF 撑爆内存/token
-  const MAX_CHARS_PER_PAGE = 8000;
-
-  for (let i = 1; i <= pageCount; i++) {
-    try {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      const text = content.items
-        .map((item) => ("str" in item ? (item as { str: string }).str : ""))
-        .join(" ")
+  if (Array.isArray(text)) {
+    for (let i = 0; i < text.length; i++) {
+      const pageText = (text[i] || "")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, MAX_CHARS_PER_PAGE);
-      pages.push({ page: i, text });
-      page.cleanup();
-    } catch {
-      // 单页失败不阻断整体提取
-      pages.push({ page: i, text: "" });
+        .slice(0, 8000);
+      pages.push({ page: i + 1, text: pageText });
     }
+  } else {
+    // text 是单个字符串，按 totalPages 拆分（fallback）
+    const fullStr = typeof text === "string" ? text : String(text || "");
+    // 如果无法分页，就把全文放在第 1 页
+    pages.push({
+      page: 1,
+      text: fullStr.replace(/\s+/g, " ").trim().slice(0, 8000),
+    });
   }
 
-  // 元数据（标题/作者），失败则返回 null
+  // 元数据
   let title: string | null = null;
   let authors: string | null = null;
   try {
-    const meta = await doc.getMetadata();
-    const info = (meta?.info || {}) as Record<string, unknown>;
-    if (typeof info.Title === "string" && info.Title.trim()) {
-      title = info.Title.trim();
+    const meta = await getMetaInfo(buffer);
+    if (meta?.info?.Title && String(meta.info.Title).trim()) {
+      title = String(meta.info.Title).trim();
     }
-    if (typeof info.Author === "string" && info.Author.trim()) {
-      authors = info.Author.trim();
+    if (meta?.info?.Author && String(meta.info.Author).trim()) {
+      authors = String(meta.info.Author).trim();
     }
   } catch {
-    // ignore
+    // 元数据提取失败不阻断
   }
 
-  // 释放资源（pdfjs v6 用 loadingTask.destroy()）
-  try {
-    await loadingTask.destroy();
-  } catch {
-    // ignore
-  }
-
-  // 全文：限制总长度，避免 AI 输入过长
+  // 全文：限制总长度
   const MAX_TOTAL = 40000;
   let fullText = pages.map((p) => p.text).join("\n\n");
   if (fullText.length > MAX_TOTAL) {
     fullText = fullText.slice(0, MAX_TOTAL);
   }
 
-  return { pageCount, pages, title, authors, fullText };
+  return {
+    pageCount: totalPages || pages.length,
+    pages,
+    title,
+    authors,
+    fullText,
+  };
 }

@@ -105,39 +105,7 @@ export async function analyzePaper(paperId: string, userId: string): Promise<Ana
   try {
     const bytes = await fetchPdfBytes(paper.fileUrl);
 
-    // ── Node 环境 polyfill ──────────────────────────────────
-    // 必须在动态 import pdf-extract（进而 import pdfjs-dist）之前注入。
-    // pdfjs-dist v6 内部引用 DOMMatrix / DOMRect 等 Web API，
-    // Node.js 没有这些全局变量，不注入会报 "DOMMatrix is not defined"。
-    if (typeof (globalThis as any).DOMMatrix === "undefined") {
-      class DOMMatrixPolyfill {
-        m11 = 1; m22 = 1; m33 = 1; m44 = 1;
-        m12 = 0; m13 = 0; m14 = 0; m21 = 0; m23 = 0; m24 = 0;
-        m31 = 0; m32 = 0; m34 = 0; m41 = 0; m42 = 0; m43 = 0;
-        constructor() {}
-        static fromMatrix() { return new (this as any)(); }
-        multiply() { return this; }
-        translate() { return this; }
-        scale() { return this; }
-        rotate() { return this; }
-        inverse() { return this; }
-      }
-      (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
-    }
-    if (typeof (globalThis as any).DOMRect === "undefined") {
-      class DOMRectPolyfill {
-        x = 0; y = 0; width = 0; height = 0;
-        get top() { return this.y; }
-        get bottom() { return this.y + this.height; }
-        get left() { return this.x; }
-        get right() { return this.x + this.width; }
-        constructor() {}
-      }
-      (globalThis as any).DOMRect = DOMRectPolyfill;
-    }
-    // ── polyfill 结束 ──────────────────────────────────────
-
-    // 动态 import，避免 pdfjs-dist 在模块加载阶段崩掉整个路由
+    // 动态 import，隔离 pdf 解析库可能带来的模块加载风险
     const { extractPdf } = await import("@/lib/pdf-extract");
     extracted = await extractPdf(bytes);
   } catch (err) {
