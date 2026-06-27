@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+
+# 规则：main 分支必须通过 CI 才能 merge
+# 本地推之前应已跑过 npm run check（typecheck + lint + build）
+# CI 是兜底，不是首选验证手段
 
 jobs:
   quality:

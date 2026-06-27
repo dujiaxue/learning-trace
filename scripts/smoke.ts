@@ -35,8 +35,8 @@ interface Probe {
 const probes: Probe[] = [
   { name: "homepage", url: "/", expectStatus: 200 },
   { name: "timeline", url: "/timeline", expectStatus: 200 },
+  { name: "blog", url: "/blog", expectStatus: 200 },
   { name: "api-papers", url: "/api/papers", expectHas: "papers" },
-  { name: "api-debug-version", url: "/api/debug-version" },
 ];
 
 async function probe(p: Probe): Promise<{ ok: boolean; detail: string }> {

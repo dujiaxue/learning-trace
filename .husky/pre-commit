@@ -1,0 +1,16 @@
+#!/bin/sh
+# Pre-commit gate: 类型检查 + lint
+# build 不跑在这里（太慢），由 CI 兜底
+echo "▶ pre-commit: typecheck + lint"
+
+npm run typecheck || {
+  echo "✗ typecheck 失败，提交中止。修完再 commit。"
+  exit 1
+}
+
+npm run lint || {
+  echo "✗ lint 失败，提交中止。修完再 commit。"
+  exit 1
+}
+
+echo "✓ pre-commit 通过"

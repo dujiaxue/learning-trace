@@ -13,7 +13,13 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "smoke": "tsx scripts/smoke.ts",
-    "setup": "prisma generate && prisma migrate deploy && tsx prisma/seed.ts"
+    "setup": "prisma generate && prisma migrate deploy && tsx prisma/seed.ts",
+    "prepare": "husky",
+    "check": "npm run typecheck && npm run lint && npm run build",
+    "check:fast": "npm run typecheck && npm run lint"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "eslint --fix"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
@@ -40,6 +46,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5"
