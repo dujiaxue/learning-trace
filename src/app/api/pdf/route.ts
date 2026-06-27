@@ -53,10 +53,11 @@ export async function GET(req: NextRequest) {
         "Content-Length": String(buffer.length),
       },
     });
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error("[pdf-proxy] error:", err);
     return NextResponse.json(
-      { error: `Proxy error: ${err?.message || err}` },
+      { error: `Proxy error: ${message}` },
       { status: 500 }
     );
   }

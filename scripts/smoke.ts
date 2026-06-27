@@ -47,7 +47,7 @@ async function probe(p: Probe): Promise<{ ok: boolean; detail: string }> {
     });
     const status = res.status;
     let bodyText = "";
-    let json: any = null;
+    let json: Record<string, unknown> | null = null;
     try {
       bodyText = await res.text();
       json = JSON.parse(bodyText);

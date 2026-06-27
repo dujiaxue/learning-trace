@@ -2,7 +2,7 @@
  * PDF upload and storage utilities
  * Uses Vercel Blob Storage for both dev and production
  */
-import { put, head, list } from "@vercel/blob";
+import { put, list } from "@vercel/blob";
 
 /**
  * Save a PDF file to Vercel Blob Storage.

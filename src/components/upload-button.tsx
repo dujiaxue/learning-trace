@@ -3,11 +3,11 @@
 import { useState, useRef } from "react";
 import { Upload, Loader2, X } from "lucide-react";
 
-interface UploadButtonProps {
-  onUploaded: (paper: any) => void;
+interface UploadButtonProps<T = Record<string, unknown>> {
+  onUploaded: (paper: T) => void;
 }
 
-export function UploadButton({ onUploaded }: UploadButtonProps) {
+export function UploadButton<T = Record<string, unknown>>({ onUploaded }: UploadButtonProps<T>) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -44,9 +44,10 @@ export function UploadButton({ onUploaded }: UploadButtonProps) {
       }
 
       const data = await res.json();
-      onUploaded(data.paper);
-    } catch (err: any) {
-      setError(err.message || "上传失败，请重试");
+      onUploaded(data.paper as T);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "上传失败，请重试";
+      setError(message);
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";

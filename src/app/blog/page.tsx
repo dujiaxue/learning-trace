@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { FileText, Clock, MessageSquare, ArrowRight, ArrowLeft, PenLine, Eye } from "lucide-react";
+import { Clock, MessageSquare, ArrowRight, ArrowLeft, PenLine } from "lucide-react";
 
 interface BlogPost {
   id: string;

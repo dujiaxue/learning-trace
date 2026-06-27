@@ -102,7 +102,7 @@ export function AnnotationDetail({ annotation, onClose, onDelete, onTogglePublic
             <div>
               <div className="text-xs font-semibold text-stone-400 uppercase mb-1">标注文字</div>
               <div className="p-3 bg-stone-50 rounded-lg text-sm text-stone-600 leading-relaxed italic">
-                "{annotation.textContent}"
+                &ldquo;{annotation.textContent}&rdquo;
               </div>
             </div>
           )}

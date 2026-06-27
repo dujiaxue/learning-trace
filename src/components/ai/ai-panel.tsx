@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, HelpCircle, AlertCircle, X, Loader2, Send, Check } from "lucide-react";
+import { Sparkles, HelpCircle, AlertCircle, Loader2, Send, Check } from "lucide-react";
 
 export type AICardType = "explain" | "quiz" | "evaluate" | "alert" | "aha" | "info";
 
@@ -79,7 +79,7 @@ export function AIPanel({
         <div className="p-3 border-b border-stone-200 bg-orange-50/30">
           <div className="text-xs text-stone-400 mb-1">已选中第 {selectedPage} 页文字：</div>
           <div className="text-sm text-stone-700 line-clamp-3 italic mb-2">
-            "{selectedText.slice(0, 120)}{selectedText.length > 120 ? "..." : ""}"
+            &ldquo;{selectedText.slice(0, 120)}{selectedText.length > 120 ? "..." : ""}&rdquo;
           </div>
           <div className="flex gap-2">
             <button

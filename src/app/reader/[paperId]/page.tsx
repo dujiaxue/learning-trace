@@ -17,7 +17,7 @@ export default function ReaderPage() {
   const params = useParams<{ paperId: string }>();
   const router = useRouter();
 
-  const [paper, setPaper] = useState<any>(null);
+  const [paper, setPaper] = useState<{ id: string; title: string; pageCount: number; fileName: string } | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiCards, setAiCards] = useState<AICardData[]>([]);
@@ -64,7 +64,16 @@ export default function ReaderPage() {
         const res = await fetch(`/api/papers/${params.paperId}`);
         const data = await res.json();
         setPaper(data.paper);
-        const mapped = (data.paper?.annotations || []).map((a: any) => ({
+        const mapped: Annotation[] = (data.paper?.annotations || []).map((a: {
+          id: string;
+          type: "highlight" | "note" | "feynman" | "misconception" | "aha";
+          pageNumber: number;
+          position: string;
+          textContent: string;
+          noteContent: string;
+          isPublic: boolean;
+          createdAt: string;
+        }) => ({
           id: a.id,
           type: a.type,
           pageNumber: a.pageNumber,
@@ -126,7 +135,7 @@ export default function ReaderPage() {
       setAiStatus("idle");
       setAiStatusIcon("idle");
       setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
-    } catch (err) {
+    } catch {
       setAiCards((prev) =>
         prev.map((c) => (c.id === cardId ? { ...c, body: "解释生成失败，请稍后重试", loading: false } : c))
       );
@@ -187,7 +196,7 @@ export default function ReaderPage() {
       setAiStatus("quiz");
       setAiStatus("正在等待你回答…");
       if (isAuto) lastAutoQuizAtRef.current = Date.now();
-    } catch (err) {
+    } catch {
       setAiCards((prev) =>
         prev.map((c) => (c.id === cardId ? { ...c, body: "出题失败，请稍后重试", loading: false } : c))
       );
@@ -223,7 +232,7 @@ export default function ReaderPage() {
       setAiStatus("idle");
       setAiStatusIcon("idle");
       setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
-    } catch (err) {
+    } catch {
       setAiCards((prev) =>
         prev.map((c) => (c.id === evalCardId ? { ...c, body: "评估失败", loading: false } : c))
       );
@@ -267,7 +276,7 @@ export default function ReaderPage() {
       setAiStatusIcon("idle");
       setAiStatus("AI 阅读伴侣 · 正在跟随你的阅读");
       if (isAuto) lastAutoMisconceptionAtRef.current = Date.now();
-    } catch (err) {
+    } catch {
       setAiCards((prev) =>
         prev.map((c) => (c.id === cardId ? { ...c, body: "误区检测失败", loading: false } : c))
       );

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Clock, MessageSquare, AlertCircle, Sparkles, FileText, Eye, EyeOff, BookOpen, ChevronRight, Link2, PenLine, Loader2, Search } from "lucide-react";
+import { ArrowLeft, MessageSquare, AlertCircle, Sparkles, FileText, Eye, EyeOff, BookOpen, ChevronRight, Link2, PenLine, Loader2 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -11,16 +11,52 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+interface RecordAnnotation {
+  id: string;
+  type: string;
+  pageNumber: number;
+  position: string;
+  textContent: string;
+  noteContent?: string;
+  isPublic: boolean;
+  createdAt: string;
+}
+
+interface RecordPaper {
+  id: string;
+  title: string;
+  pageCount: number;
+  fileName: string;
+  finalSummary: string | null;
+  isPublic: boolean;
+  annotations: RecordAnnotation[];
+}
+
+interface KnowledgeLink {
+  id: string;
+  concept: string;
+  explanation: string;
+  similarity: number;
+  otherPaper: { id: string; title: string };
+}
+
+interface BlogPost {
+  id: string;
+  title: string;
+  content: string;
+  status: string;
+}
+
 export default function RecordPage() {
   const params = useParams<{ paperId: string }>();
   const router = useRouter();
-  const [paper, setPaper] = useState<any>(null);
+  const [paper, setPaper] = useState<RecordPaper | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"notes" | "stats" | "links" | "blog">("notes");
-  const [selectedAnnotation, setSelectedAnnotation] = useState<any>(null);
-  const [knowledgeLinks, setKnowledgeLinks] = useState<any[]>([]);
+  const [selectedAnnotation, setSelectedAnnotation] = useState<RecordAnnotation | null>(null);
+  const [knowledgeLinks, setKnowledgeLinks] = useState<KnowledgeLink[]>([]);
   const [linksLoading, setLinksLoading] = useState(false);
-  const [blogPost, setBlogPost] = useState<any>(null);
+  const [blogPost, setBlogPost] = useState<BlogPost | null>(null);
   const [blogLoading, setBlogLoading] = useState(false);
   const [blogEditing, setBlogEditing] = useState(false);
   const [blogContent, setBlogContent] = useState("");
@@ -48,6 +84,7 @@ export default function RecordPage() {
     if (sidebarTab === "blog" && params.paperId && !blogPost && !blogLoading) {
       fetchBlogPost();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sidebarTab, params.paperId]);
 
   async function fetchKnowledgeLinks() {
@@ -158,11 +195,11 @@ export default function RecordPage() {
   }
 
   const annotations = paper.annotations || [];
-  const highlights = annotations.filter((a: any) => a.type === "highlight");
-  const notes = annotations.filter((a: any) => a.type === "note");
-  const feynmans = annotations.filter((a: any) => a.type === "feynman");
-  const misconceptions = annotations.filter((a: any) => a.type === "misconception");
-  const ahas = annotations.filter((a: any) => a.type === "aha");
+  const highlights = annotations.filter((a) => a.type === "highlight");
+  const notes = annotations.filter((a) => a.type === "note");
+  const feynmans = annotations.filter((a) => a.type === "feynman");
+  const misconceptions = annotations.filter((a) => a.type === "misconception");
+  const ahas = annotations.filter((a) => a.type === "aha");
 
   const colors: Record<string, string> = {
     highlight: "rgba(254, 243, 199, 0.4)",
@@ -181,7 +218,7 @@ export default function RecordPage() {
   };
 
   // Group annotations by page
-  const annotationsByPage = annotations.reduce((acc: Record<number, any[]>, ann: any) => {
+  const annotationsByPage = annotations.reduce((acc: Record<number, RecordAnnotation[]>, ann) => {
     const page = ann.pageNumber;
     if (!acc[page]) acc[page] = [];
     acc[page].push(ann);
@@ -225,10 +262,10 @@ export default function RecordPage() {
                   <Page pageNumber={pageNum} scale={1.2} />
                   {/* Baked annotations */}
                   <div className="absolute inset-0 pointer-events-none" style={{ transform: "scale(1.2)", transformOrigin: "top left" }}>
-                    {pageAnns.map((ann: any) => {
+                    {pageAnns.map((ann) => {
                       const parsed = JSON.parse(ann.position || '{"rects":[]}');
-                      const rects = parsed.rects || [];
-                      return rects.map((rect: any, idx: number) => (
+                      const rects: Array<{ x: number; y: number; width: number; height: number }> = parsed.rects || [];
+                      return rects.map((rect, idx: number) => (
                         <div
                           key={`${ann.id}-${idx}`}
                           className="absolute pointer-events-auto cursor-pointer hover:opacity-80"
@@ -522,7 +559,7 @@ export default function RecordPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
               {selectedAnnotation.textContent && (
-                <div className="p-3 bg-stone-50 rounded-lg text-sm text-stone-600 italic">"{selectedAnnotation.textContent}"</div>
+                <div className="p-3 bg-stone-50 rounded-lg text-sm text-stone-600 italic">&ldquo;{selectedAnnotation.textContent}&rdquo;</div>
               )}
               {selectedAnnotation.noteContent && (
                 <div className="p-3 bg-blue-50 rounded-lg text-sm text-stone-700">{selectedAnnotation.noteContent}</div>
@@ -535,7 +572,7 @@ export default function RecordPage() {
   );
 }
 
-function Section({ title, icon, items, onSelect }: { title: string; icon: React.ReactNode; items: any[]; onSelect: (a: any) => void }) {
+function Section({ title, icon, items, onSelect }: { title: string; icon: React.ReactNode; items: RecordAnnotation[]; onSelect: (a: RecordAnnotation) => void }) {
   return (
     <div>
       <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-400 uppercase mb-2 pb-1 border-b border-stone-100">
@@ -543,7 +580,7 @@ function Section({ title, icon, items, onSelect }: { title: string; icon: React.
         {title} ({items.length})
       </div>
       <div className="space-y-1.5">
-        {items.map((item: any) => (
+        {items.map((item) => (
           <button
             key={item.id}
             onClick={() => onSelect(item)}

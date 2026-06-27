@@ -16,10 +16,11 @@ export async function POST(
   try {
     const result = await reanalyzePaper(id, userId);
     return NextResponse.json(result);
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error("[reanalyze] failed:", err);
     return NextResponse.json(
-      { ok: false, paperId: id, error: err?.message || String(err) },
+      { ok: false, paperId: id, error: message },
       { status: 500 }
     );
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X, Send } from "lucide-react";
 
 interface NoteInputProps {
@@ -41,7 +41,7 @@ export function NoteInput({ open, selectedText, pageNumber, onClose, onSave }: N
       {/* Selected text preview */}
       {selectedText && (
         <div className="mb-3 p-2 bg-stone-50 rounded text-xs text-stone-500 italic line-clamp-2">
-          "{selectedText}"
+          &ldquo;{selectedText}&rdquo;
         </div>
       )}
 

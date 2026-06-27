@@ -48,7 +48,18 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const allLinks: any[] = [];
+    interface KnowledgeLinkResult {
+      id: string;
+      sourcePaperId: string;
+      targetPaperId: string;
+      concept: string;
+      explanation: string | null;
+      similarity: number;
+      aiGenerated: boolean;
+      targetPaperTitle: string;
+    }
+
+    const allLinks: KnowledgeLinkResult[] = [];
 
     // Compare current paper with each other paper
     for (const other of otherPapers) {

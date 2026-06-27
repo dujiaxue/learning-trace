@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { FileText, Clock, MessageSquare, ArrowRight } from "lucide-react";
+import { FileText, MessageSquare, ArrowRight } from "lucide-react";
 import { UploadButton } from "@/components/upload-button";
 
 interface Paper {

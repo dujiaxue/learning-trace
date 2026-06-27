@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Clock, FileText, MessageSquare, AlertCircle, Sparkles, BookOpen } from "lucide-react";
+import { Clock, FileText, MessageSquare } from "lucide-react";
 
 export interface SessionStats {
   totalPages: number;

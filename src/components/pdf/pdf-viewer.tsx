@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { Highlighter, MessageSquare, X, Loader2, Send } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -45,7 +45,7 @@ export function PdfViewer({
   annotations,
   onTextSelect,
   onAnnotationClick,
-  onAnnotationCreate,
+  onAnnotationCreate: _onAnnotationCreate,
 }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);

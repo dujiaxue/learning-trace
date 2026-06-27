@@ -27,10 +27,11 @@ export async function POST(req: NextRequest) {
       const result = await savePdf(file);
       fileUrl = result.fileUrl;
       fileName = result.fileName;
-    } catch (blobError: any) {
+    } catch (blobError) {
+      const msg = blobError instanceof Error ? blobError.message : String(blobError);
       console.error("Blob upload failed:", blobError);
       return NextResponse.json(
-        { error: `Blob upload failed: ${blobError?.message || blobError}` },
+        { error: `Blob upload failed: ${msg}` },
         { status: 500 }
       );
     }
@@ -60,10 +61,11 @@ export async function POST(req: NextRequest) {
           status: "reading",
         },
       });
-    } catch (dbError: any) {
+    } catch (dbError) {
+      const msg = dbError instanceof Error ? dbError.message : String(dbError);
       console.error("DB create failed:", dbError);
       return NextResponse.json(
-        { error: `DB create failed: ${dbError?.message || dbError}` },
+        { error: `DB create failed: ${msg}` },
         { status: 500 }
       );
     }
@@ -77,7 +79,7 @@ export async function POST(req: NextRequest) {
           mode: "free",
         },
       });
-    } catch (dbError: any) {
+    } catch (dbError) {
       console.error("Session create failed:", dbError);
       // Paper is created, session is not critical
     }
