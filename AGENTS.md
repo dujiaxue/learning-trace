@@ -1,5 +1,5 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# AI Agent 工作流规范
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+请阅读 `.cursor/rules/agent-workflow.mdc` 获取完整的 Agent 工作流规范。
+
+本文档仅作为入口文件引用实际规范。

@@ -1,0 +1,537 @@
+---
+description: AI Agent 与人工开发者协作工作流规范
+alwaysApply: true
+---
+
+# Agent 工作流规范
+
+本文档规定本项目中 AI Agent 与人工开发者协作时的默认工作流。目标是让每一次需求变更都可追溯、可验证、可回滚，并适合 GitHub 分支协作。
+
+**适用范围：**
+- 适用于所有 AI Agent 对本仓库进行的代码、配置、脚本、文档、数据处理相关改动。
+- 人工开发者可参考执行。若用户在对话中给出更具体的临时指令，以用户当前指令为准。
+- 本文档不替代项目 README。README 面向运行和使用，本文档面向协作和改动流程。
+
+## 1. 基本原则
+
+1. 每次开始改动前，先同步远端，避免基于过期代码开发。
+2. 每个需求先明确验收条件，再写测试或最小复现，再改实现。
+3. 每次改动只解决一个清晰问题，避免夹带无关重构。
+4. 每次改动都必须验证，验证结果要在最终回复中说明。
+5. 每次完成一个需求后，默认提交 Git commit，除非用户明确要求不要提交。
+6. 不覆盖用户未提交的改动，不替用户撤销他们的工作。
+7. 本仓库为私有仓库，允许提交项目运行所需的 API Key / Token；但个人高权限凭据、与项目无关的私密凭据、个人本机路径仍不得提交。
+
+## 2. 项目事实
+
+- GitHub 仓库：`https://github.com/dujiaxue/knowmochi.git`
+- 默认远端：`origin`
+- 默认主分支：`main`
+- 前端：Next.js (App Router) + TypeScript + Tailwind CSS
+- 后端：Next.js API Routes + Prisma + PostgreSQL
+- 数据库：Prisma ORM + PostgreSQL
+- 常用脚本：
+  - `npm run dev`：启动开发服务器
+  - `npm run build`：生产构建
+  - `npm run lint`：ESLint 检查
+  - `npx prisma studio`：打开 Prisma 数据库管理界面
+
+## 3. 每次任务开始前
+
+Agent 在任何代码或文件改动前必须执行以下检查。
+
+### 3.1 检查工作区
+
+```bash
+git status --short --branch
+```
+
+**处理规则：**
+- 如果工作区干净，可以继续同步远端。
+- 如果存在未提交改动，先判断是否是本次 Agent 已产生的改动。
+- 如果存在用户或其他协作者的未提交改动，**禁止**覆盖、还原、格式化这些文件。
+- 如果用户改动与本次需求无关，继续工作但避开相关文件。
+- 如果用户改动与本次需求冲突，先向用户说明冲突点，再决定是否继续。
+
+### 3.2 同步远端
+
+每次开始实际改动前必须执行：
+
+```bash
+git fetch origin
+git status --short --branch
+```
+
+当当前分支可快进时执行：
+
+```bash
+git pull --ff-only
+```
+
+**规则：**
+- 只允许快进合并，默认不做 merge commit。
+- 如果本地分支和远端分支分叉，停止改动并向用户说明。
+- 如果工作区不干净，禁止直接 `git pull`，除非确认这些改动都是 Agent 当前任务产生且可以安全暂存。
+- **禁止**使用 `git reset --hard`、`git checkout -- <file>` 等破坏性命令，除非用户明确要求。
+
+## 4. 分支策略
+
+GitHub 协作默认采用功能分支和 Pull Request，不直接向 `main` 长期开发。
+
+### 4.1 默认分支命名
+
+从最新 `main` 创建任务分支：
+
+```bash
+git switch main
+git pull --ff-only origin main
+git switch -c ai/YYYYMMDD-short-topic
+```
+
+**命名规则：**
+- 功能：`ai/YYYYMMDD-feat-short-name`
+- 修复：`ai/YYYYMMDD-fix-short-name`
+- 文档：`ai/YYYYMMDD-docs-short-name`
+- 重构：`ai/YYYYMMDD-refactor-short-name`
+- 测试：`ai/YYYYMMDD-test-short-name`
+
+**示例：**
+- `ai/20260627-docs-agent-workflow`
+- `ai/20260627-fix-pdf-build`
+- `ai/20260627-feat-study-progress`
+
+### 4.2 何时可以直接在 main 改
+
+仅以下情况可以直接在 `main` 上提交：
+- 用户明确要求直接改 `main`。
+- 纯文档或本地初始化改动，且用户明确表示暂不走 PR。
+- 仓库当前尚未建立多人协作分支规范，且用户要求快速落地。
+
+即使直接在 `main` 提交，也必须先同步远端并通过验证。
+
+## 5. 需求接收流程
+
+每次用户提出需求后，Agent 必须先完成以下动作。
+
+### 5.1 明确需求类型
+
+将需求归类为以下之一：
+- `feat`：新功能
+- `fix`：缺陷修复
+- `docs`：文档
+- `test`：测试补充
+- `refactor`：不改变行为的重构
+- `chore`：依赖、配置、脚本、工程维护
+- `data`：题库、数据库、PDF、导入导出数据相关改动
+
+### 5.2 明确验收条件
+
+在动手前写出最小验收条件。验收条件应具体到用户可观察行为，例如：
+- 首页能显示教材统计。
+- 阅读页点击段落后右侧显示对应题目。
+- `npm run build` 可以通过。
+- 某个 API 返回的字段结构保持兼容。
+- 新增题型在 UI 中有明确展示状态。
+
+若需求模糊但可合理推断，Agent 应做合理假设并继续。只有当继续会造成明显风险时才向用户提问。
+
+## 6. 测试先行规则
+
+默认执行测试先行。除非是纯文档改动，否则每个需求都应先写测试、复现脚本或验证用例。
+
+### 6.1 功能开发
+
+**流程：**
+1. 先写一个会失败的测试或可执行验收用例。
+2. 运行测试，确认它因目标功能缺失而失败。
+3. 实现功能。
+4. 再运行测试，确认通过。
+5. 运行相关回归验证。
+
+### 6.2 Bug 修复
+
+**流程：**
+1. 先定位 bug 的最小复现路径。
+2. 写回归测试，或记录可重复执行的复现命令。
+3. 确认修复前测试失败或复现存在。
+4. 修改代码。
+5. 确认测试通过且 bug 不再复现。
+
+### 6.3 UI 改动
+
+UI 改动至少需要一种验证：
+- 组件或页面测试。
+- Playwright 端到端测试。
+- 启动本地服务并截图核对。
+- 对响应式布局做桌面和移动视口检查。
+
+涉及 PDF、Canvas、滚动、点击区域、题目面板等交互时，优先用 Playwright 做真实浏览器验证。
+
+### 6.4 后端 API 改动
+
+API 改动至少需要验证：
+- 请求成功路径。
+- 关键错误路径。
+- 返回 JSON 结构。
+- 数据库查询条件。
+- 前端调用兼容性。
+
+可以使用测试框架，也可以使用临时脚本或 `Invoke-RestMethod` 验证。长期应沉淀为自动化测试。
+
+### 6.5 数据和题库改动
+
+涉及 `data/` 下数据库、题库 JSON、段落导入导出时，必须验证：
+- 数据可读。
+- 记录数量符合预期。
+- 关键字段非空。
+- 前后端查询不报错。
+- 不把临时生成文件、私有数据、凭据提交进仓库。
+
+### 6.6 允许不先写测试的情况
+
+以下情况可不先写测试，但必须说明原因：
+- 纯文档改动。
+- 只调整注释、拼写、README。
+- 只修改忽略规则或非运行时元数据。
+- 项目测试基础设施缺失，且本次任务目标就是先补基础设施。
+
+## 7. 实现过程规则
+
+1. 优先遵循现有代码风格和目录结构。
+2. 改动范围保持最小，不做无关重构。
+3. 新增抽象必须有明确收益，不能为抽象而抽象。
+4. 优先修正根因，不用临时绕过掩盖问题。
+5. 不引入新依赖，除非现有工具无法合理完成需求。
+6. 新依赖必须说明用途、替代方案、体积或安全影响。
+7. 配置文件属于项目源代码，应提交到仓库，不能被 `.gitignore` 忽略。
+8. 本项目已有大文件和数据库，改动前必须确认是否真的需要修改二进制文件。
+
+## 8. 验证矩阵
+
+Agent 每次完成改动后，应根据改动类型选择验证命令。
+
+### 8.1 通用验证
+
+优先运行：
+```bash
+npm run lint
+npm run build
+```
+
+若当前仓库基线导致某条命令失败，必须在最终回复中说明失败原因和与本次改动的关系。
+
+### 8.2 前端改动
+
+建议验证：
+```bash
+npm run lint
+npm run build
+```
+
+若有测试脚本，应同时运行：
+```bash
+npm test
+```
+
+### 8.3 后端 API 改动
+
+建议启动开发服务器后测试 API：
+```bash
+npm run dev
+```
+
+使用 curl 或 Invoke-RestMethod 验证：
+```bash
+curl http://localhost:3000/api/endpoint
+# 或 Windows PowerShell
+Invoke-RestMethod http://localhost:3000/api/endpoint
+```
+
+### 8.4 数据库改动
+
+使用 Prisma Studio 检查数据：
+```bash
+npx prisma studio
+```
+
+或使用 Prisma 命令验证：
+```bash
+npx prisma db push
+npx prisma migrate status
+```
+
+## 9. Git 提交流程
+
+除非用户明确要求不要提交，Agent 完成一个需求后默认提交 Git commit。
+
+### 9.1 提交前检查
+
+提交前必须执行：
+```bash
+git status --short
+git diff --check
+```
+
+并确认：
+- 只包含本次任务相关改动。
+- 没有意外格式化大量无关文件。
+- 若包含 API Key / Token，确认它们是本私有仓库项目运行所需的项目级凭据，而不是个人高权限凭据或与项目无关的私密凭据。
+- 没有 cookie、私钥、个人本机路径等不应提交的信息。
+- 没有把 `node_modules/`、`dist/`、日志、临时文件加入提交。
+- 二进制文件改动是有意的。
+
+### 9.2 提交粒度
+
+一个 commit 应表达一个完整意图：
+- ✅ 好：`fix: keep pdf viewer from jumping on scroll`
+- ✅ 好：`test: add paragraph matching regression cases`
+- ❌ 不好：`update`
+- ❌ 不好：`fix stuff`
+
+如果一个需求自然拆成多步，可提交多个 commit：
+1. 先提交测试。
+2. 再提交实现。
+3. 最后提交文档或配置。
+
+若项目还没有测试基础设施，也可以在同一 PR 中先提交测试基础设施，再提交业务改动。
+
+### 9.3 提交消息规范
+
+使用 Conventional Commits：
+
+```
+type(scope): short summary
+```
+
+**常用类型：**
+- `feat`：新增功能
+- `fix`：修复缺陷
+- `docs`：文档
+- `test`：测试
+- `refactor`：重构
+- `chore`：工程维护
+- `build`：构建系统
+- `ci`：CI 配置
+- `data`：题库或数据库数据
+
+**示例：**
+```
+docs: add agent collaboration workflow
+fix(read): match pdf paragraph clicks more reliably
+test(api): cover textbook stats endpoint
+build: restore vite and typescript configs
+```
+
+## 10. GitHub Pull Request 流程
+
+默认协作方式：
+1. 从最新 `main` 创建功能分支。
+2. 完成测试和实现。
+3. 本地提交 commit。
+4. 推送分支到 GitHub。
+5. 创建 Pull Request。
+6. 等待 review 和 CI。
+7. 通过后合并到 `main`。
+
+### 10.1 推送规则
+
+默认推送当前功能分支：
+```bash
+git push -u origin <branch-name>
+```
+
+**禁止**在未经用户许可的情况下 force push 到共享分支。
+
+**允许 force push 的情况：**
+- 当前分支是 Agent 为本次任务新建的个人功能分支。
+- 用户明确要求整理 commit。
+- 已确认没有其他协作者基于该分支开发。
+
+使用 force push 时优先：
+```bash
+git push --force-with-lease
+```
+
+### 10.2 PR 描述模板
+
+Pull Request 应包含：
+
+```markdown
+## Summary
+- 
+
+## Tests
+- 
+
+## Risk
+- 
+
+## Notes
+- 
+```
+
+`Tests` 必须列出实际运行过的命令和结果。若有测试未运行，说明原因。
+
+### 10.3 合并策略
+
+建议 GitHub 仓库启用：
+- 保护 `main` 分支。
+- 禁止直接 push 到 `main`。
+- PR 至少 1 人 review。
+- 必须通过 CI。
+- 使用 squash merge 或 rebase merge，保持 `main` 历史清晰。
+
+## 11. 自动提交和自动推送约定
+
+**默认行为：**
+- Agent 完成需求后自动 commit。
+- Agent **不默认** push，除非用户明确要求推送，或本次任务明确是"创建 PR/提交到 GitHub"。
+
+**推荐团队约定：**
+- 日常开发：自动 commit，本地等待用户确认后 push。
+- 明确 GitHub 协作任务：自动创建分支、commit、push，并给出 PR 链接或创建 PR 的命令。
+- 紧急小修：可在用户确认后直接 push 到指定分支。
+
+**原因：**
+- 自动 commit 能保证本地改动可回滚。
+- push 会影响远端协作者，应在需求明确时执行。
+
+## 12. 冲突和脏工作区处理
+
+### 12.1 发现用户未提交改动
+
+Agent 必须：
+1. 列出受影响文件。
+2. 判断是否与本次任务相关。
+3. **不覆盖、不还原、不格式化**这些文件。
+4. 如果必须修改同一文件，先说明风险。
+
+### 12.2 拉取远端时冲突
+
+如果 `git pull --ff-only` 失败：
+1. 停止继续改动。
+2. 报告本地分支与远端分支分叉。
+3. 建议用户选择 rebase、merge、另起分支或人工处理。
+
+### 12.3 改动过程中出现远端更新
+
+在提交前再次执行：
+```bash
+git fetch origin
+git status --short --branch
+```
+
+如果当前分支落后远端，优先 rebase 到最新分支，但只在功能分支上执行：
+```bash
+git rebase origin/main
+```
+
+如果 rebase 出现冲突，停止并报告冲突文件。
+
+## 13. 安全和凭据
+
+本仓库是私有仓库，团队约定允许提交项目运行所需的 API Key / Token。Agent 不应因"密钥出现在代码或配置中"而自动阻止提交，但必须区分项目级凭据和个人敏感凭据。
+
+**允许提交：**
+- 本项目运行所需的模型 API Key。
+- 本项目部署或测试所需的服务 Token。
+- 用户明确要求保存在仓库中的项目级 `.env` 或配置文件。
+
+**禁止提交：**
+- 个人 GitHub Token、个人云账号 Token、个人 SSH 私钥等高权限个人凭据。
+- Cookie、会话令牌、浏览器导出的登录态。
+- 与本项目无关的密钥或第三方账号凭据。
+- 真实用户隐私数据。
+- 个人电脑绝对路径，例如 `C:/Users/...`、`d:/mayuan/...`。
+
+**规则：**
+- 若用户明确要求提交 API Key / Token，可以提交，但最终回复必须说明涉及凭据文件。
+- 如果凭据权限过高或看起来属于个人账号，先向用户确认用途和提交范围。
+- 若仓库未来转为公开、外包协作、成员变更或凭据疑似泄露，需要轮换相关密钥。
+- 推荐代码优先支持 `process.env`，即使仓库中保留默认项目级凭据，也应允许部署环境覆盖。
+- `.env.example` 仍可用于说明变量名和本地配置方式；是否提交真实 `.env` 以用户当前要求为准。
+
+## 14. 依赖管理
+
+新增或升级依赖前必须检查：
+- 是否已有依赖可以完成任务。
+- 是否会显著增加前端包体积。
+- 是否有已知安全漏洞。
+- 是否需要同步修改 lockfile。
+- 是否影响 Node 版本要求。
+
+依赖变更后必须运行：
+```bash
+npm install
+npm audit
+npm run build
+```
+
+若 `npm audit` 存在漏洞，必须在最终说明中列出严重等级和处理建议。
+
+## 15. 数据库和大文件规则
+
+本项目使用 Prisma + PostgreSQL 数据库，大文件改动需要谨慎。
+
+**规则：**
+- 修改数据库 schema 前必须备份或确认变更可回滚。
+- 数据库改动必须记录来源脚本和验证结果。
+- 不提交临时数据库导出、调试中间文件、调试截图，除非它们是项目需要的正式资产。
+- 二进制文件变更必须在 commit 或 PR 描述中说明原因。
+
+## 16. 文档同步
+
+代码行为改变时，必须同步更新相关文档：
+- 新增运行方式：更新 `README.md`。
+- 新增协作规则：更新本规则文件。
+- 新增环境变量：更新 `.env.local.example`。
+- API 行为改变：更新接口说明或 README。
+
+## 17. 最终回复格式
+
+Agent 完成任务后，最终回复应包含：
+1. 改了什么。
+2. 哪些文件被修改。
+3. 运行了哪些验证命令，结果如何。
+4. 是否已 commit，commit hash 是什么。
+5. 若未 push，说明当前分支和下一步。
+6. 若有失败的验证，说明原因和影响。
+
+**示例：**
+```
+已完成阅读页段落点击修复，修改了 ReadPage 和 PDFTextViewer。
+
+验证：
+- npm run lint：通过
+- npm run build：通过
+
+已提交：
+- fix(read): improve paragraph click matching
+- commit: abc1234
+
+当前分支：ai/20260627-fix-paragraph-click
+尚未 push。
+```
+
+## 18. Definition of Done
+
+一个需求完成必须同时满足：
+- [ ] 验收条件已实现。
+- [ ] 测试或验证已运行。
+- [ ] 相关文档已更新。
+- [ ] 没有无关文件改动。
+- [ ] 凭据处理符合本私有仓库约定；若提交了 API Key / Token，已确认是项目级凭据或用户明确要求提交。
+- [ ] Git 工作区状态清晰。
+- [ ] 已按约定提交 commit，或明确说明未提交原因。
+
+## 19. 当前项目的优先工程任务
+
+以下是后续开发前建议优先处理的工程基线问题：
+
+1. 恢复并提交 `vite.config.ts`、`tsconfig*.json`、`tailwind.config.*`、`postcss.config.*`、`eslint.config.*`。
+2. 修改 `.gitignore`，不要忽略项目必要配置。
+3. 建立测试基础设施，例如 Vitest、React Testing Library、Playwright。
+4. 为后端 API 增加基础测试或可重复验证脚本。
+5. 清理脚本中的明文 API Key 和硬编码本机路径。
+6. 处理 `npm audit` 报告的高危依赖。
+7. 考虑为 PDF 结构中的 `skip` 章节添加前端标记或视觉区分。

@@ -3,11 +3,21 @@ import OpenAI from "openai";
 /**
  * DeepSeek API client (OpenAI-compatible interface)
  * Docs: https://platform.deepseek.com/
+ *
+ * 注意：构建时延迟初始化，避免因缺少环境变量导致构建失败
  */
-export const deepseek = new OpenAI({
-  baseURL: "https://api.deepseek.com/v1",
-  apiKey: process.env.DEEPSEEK_API_KEY || "",
-});
+function createDeepSeekClient(): OpenAI {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    console.warn("[ai] DEEPSEEK_API_KEY not set, AI features will be disabled");
+  }
+  return new OpenAI({
+    baseURL: "https://api.deepseek.com/v1",
+    apiKey: apiKey || "placeholder",
+  });
+}
+
+export const deepseek = createDeepSeekClient();
 
 export const DEEPSEEK_MODEL = {
   chat: "deepseek-chat",
